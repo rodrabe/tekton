@@ -44,7 +44,7 @@ set -euo pipefail
 TOOLCHAIN_NAME="${TOOLCHAIN_NAME:-log-message-toolchain}"
 PIPELINE_NAME="${PIPELINE_NAME:-log-message-pipeline}"
 WEBHOOK_SECRET="${WEBHOOK_SECRET:-changeme}"
-REPO_BRANCH="${REPO_BRANCH:-master}"
+REPO_BRANCH="${REPO_BRANCH:-main}"
 TEKTON_PATH="${TEKTON_PATH:-.tekton}"
 
 TOOLCHAIN_API="https://api.${IBMCLOUD_REGION}.devops.cloud.ibm.com/toolchain/v2"
