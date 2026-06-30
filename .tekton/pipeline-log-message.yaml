@@ -1,0 +1,16 @@
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: log-message-pipeline
+spec:
+  params:
+    - name: message
+      type: string
+      description: The string message to log
+  tasks:
+    - name: log-message
+      taskRef:
+        name: log-message
+      params:
+        - name: message
+          value: $(params.message)

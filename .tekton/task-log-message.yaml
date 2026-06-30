@@ -1,0 +1,15 @@
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: log-message
+spec:
+  params:
+    - name: message
+      type: string
+      description: The string message to log
+  steps:
+    - name: log
+      image: alpine:3.19
+      script: |
+        #!/bin/sh
+        echo "$(params.message)"

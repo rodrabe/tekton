@@ -1,0 +1,46 @@
+# Tekton pipeline triggers definition — IBM Cloud reads this file from the repository.
+# Docs: https://cloud.ibm.com/docs/ContinuousDelivery?topic=ContinuousDelivery-tekton-pipelines
+---
+apiVersion: tekton.dev/v1beta1
+kind: TriggerBinding
+metadata:
+  name: log-message-binding
+spec:
+  params:
+    - name: message
+      value: $(body.message)
+---
+apiVersion: tekton.dev/v1beta1
+kind: TriggerTemplate
+metadata:
+  name: log-message-template
+spec:
+  params:
+    - name: message
+      description: The string message received from the webhook body
+      default: ""
+  resourcetemplates:
+    - apiVersion: tekton.dev/v1beta1
+      kind: PipelineRun
+      metadata:
+        generateName: log-message-run-
+      spec:
+        pipelineRef:
+          name: log-message-pipeline
+        params:
+          - name: message
+            value: $(tt.params.message)
+---
+# The EventListener is the named entry-point that IBM Cloud registers
+# as the "generic webhook" trigger endpoint inside the Tekton pipeline service.
+apiVersion: tekton.dev/v1beta1
+kind: EventListener
+metadata:
+  name: log-message-listener
+spec:
+  triggers:
+    - name: webhook-trigger
+      bindings:
+        - ref: log-message-binding
+      template:
+        ref: log-message-template

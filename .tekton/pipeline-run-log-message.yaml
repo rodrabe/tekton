@@ -1,0 +1,10 @@
+apiVersion: tekton.dev/v1beta1
+kind: PipelineRun
+metadata:
+  generateName: log-message-run-
+spec:
+  pipelineRef:
+    name: log-message-pipeline
+  params:
+    - name: message
+      value: "hello from manual trigger"
