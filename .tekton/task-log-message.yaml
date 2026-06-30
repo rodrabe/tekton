@@ -6,10 +6,13 @@ spec:
   params:
     - name: message
       type: string
-      description: The string message to log
+      description: The string message to count and log
   steps:
-    - name: log
+    - name: count-and-log
       image: alpine:3.19
       script: |
         #!/bin/sh
-        echo "$(params.message)"
+        MSG="$(params.message)"
+        COUNT=$(printf '%s' "${MSG}" | wc -m | tr -d ' ')
+        echo "Message: ${MSG}"
+        echo "Character count: ${COUNT}"
