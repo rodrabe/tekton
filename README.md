@@ -17,20 +17,29 @@ IBM Cloud Tekton pipeline that logs a string parameter delivered via a webhook t
 ## Prerequisites
 
 ```bash
-# Install the IBM Cloud CLI
-# https://cloud.ibm.com/docs/cli
+# 1. Install the IBM Cloud CLI
+#    https://cloud.ibm.com/docs/cli
 
-ibmcloud plugin install continuous-delivery
+# 2. Install the 'dev' plugin (provides toolchain-get, tekton-trigger, etc.)
 ibmcloud plugin install dev
+
+# 3. Install jq (used by deploy.sh for JSON parsing)
+#    macOS:  brew install jq
+#    Linux:  apt-get install jq  /  yum install jq
 ```
+
+> **Note:** `toolchain-create` was removed from the `dev` plugin in v3+. `deploy.sh` now
+> creates toolchains directly via the [Toolchain REST API](https://cloud.ibm.com/apidocs/toolchain).
+> The `continuous-delivery` plugin is no longer available in the IBM Cloud plugin repository.
 
 ## Deploy
 
 ```bash
 export IBMCLOUD_API_KEY=<your-api-key>
 export IBMCLOUD_REGION=us-south          # change to your region
-export RESOURCE_GROUP=default
+export RESOURCE_GROUP=Default            # exact name, case-sensitive — run: ibmcloud resource groups
 export REPO_URL=https://github.com/<org>/tekton
+export WEBHOOK_SECRET=changeme           # token validated in X-Webhook-Token header
 
 chmod +x .tekton/deploy.sh
 ./.tekton/deploy.sh
@@ -39,12 +48,13 @@ chmod +x .tekton/deploy.sh
 ## Trigger the webhook
 
 ```bash
-# With a custom message
+# Re-run with a custom message (skips resource creation if already deployed)
 MESSAGE="my custom string" ./.tekton/deploy.sh
 
-# Or fire the webhook directly once you have the URL
+# Or fire the webhook directly
 curl -X POST "<WEBHOOK_URL>" \
   -H "Content-Type: application/json" \
+  -H "X-Webhook-Token: changeme" \
   -d '{"message": "hello world"}'
 ```
 
