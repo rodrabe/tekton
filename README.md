@@ -6,12 +6,16 @@ IBM Cloud Tekton pipeline that logs a string parameter delivered via a webhook t
 
 ```
 .tekton/
-├── task-log-message.yaml          # Tekton Task — echoes the message param
-├── pipeline-log-message.yaml      # Tekton Pipeline — wires the task
-├── tekton-pipeline.yaml           # TriggerBinding + TriggerTemplate + EventListener
-├── toolchain.yaml                 # IBM Cloud Continuous Delivery toolchain definition
-├── pipeline-run-log-message.yaml  # Manual PipelineRun for ad-hoc testing
-└── deploy.sh                      # Deploy + trigger script using ibmcloud CLI
+├── task-log-message.yaml     # Tekton Task — echoes the message param
+├── pipeline-log-message.yaml # Tekton Pipeline — wires the task
+├── tekton-pipeline.yaml      # TriggerBinding + TriggerTemplate + EventListener
+├── toolchain.yaml            # IBM Cloud Continuous Delivery toolchain definition
+└── deploy.sh                 # Deploy + trigger script using ibmcloud CLI
+
+examples/
+└── pipeline-run-log-message.yaml  # Manual PipelineRun for local ad-hoc testing
+                                   # (kept outside .tekton/ — IBM Cloud rejects
+                                   #  PipelineRun objects in the definition path)
 ```
 
 ## Prerequisites
