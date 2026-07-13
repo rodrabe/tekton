@@ -17,7 +17,7 @@ spec:
       script: |
         #!/bin/sh
         packer version
-        packer plugins install github.com/IBM/ibmcloud 3.60.0
+        packer plugins install github.com/IBM/ibmcloud 3.0.3
         packer plugins installed
         MSG="$(params.message)"
         COUNT=$(printf '%s' "${MSG}" | wc -m | tr -d ' ')
