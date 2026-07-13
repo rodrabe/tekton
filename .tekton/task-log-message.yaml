@@ -13,11 +13,12 @@ spec:
       default: "3.6.0"
   steps:
     - name: count-and-log
-      image: hashicorp/packer:1.11.2
+      image: hashicorp/packer:1.15.4
       script: |
         #!/bin/sh
         packer version
-        packer plugins install github.com/IBM/ibmcloud "$(params.packer-ibm-version)"
+        packer plugins install github.com/IBM/ibmcloud 3.60.0
+        packer plugins installed
         MSG="$(params.message)"
         COUNT=$(printf '%s' "${MSG}" | wc -m | tr -d ' ')
         echo "Message: ${MSG}"
