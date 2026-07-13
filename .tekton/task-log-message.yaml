@@ -7,14 +7,17 @@ spec:
     - name: message
       type: string
       description: The string message to count and log
+    - name: packer-ibm-version
+      type: string
+      description: IBM Cloud Packer plugin version to install
+      default: "3.6.0"
   steps:
     - name: count-and-log
       image: hashicorp/packer:1.11.2
       script: |
         #!/bin/sh
         packer version
-        echo "Waiting 60 seconds before counting..."
-        sleep 60
+        packer plugins install github.com/IBM/ibmcloud "$(params.packer-ibm-version)"
         MSG="$(params.message)"
         COUNT=$(printf '%s' "${MSG}" | wc -m | tr -d ' ')
         echo "Message: ${MSG}"
