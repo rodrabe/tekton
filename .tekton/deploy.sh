@@ -47,14 +47,14 @@ WEBHOOK_SECRET="${WEBHOOK_SECRET:-changeme}"
 REPO_BRANCH="${REPO_BRANCH:-main}"
 TEKTON_PATH="${TEKTON_PATH:-.tekton}"
 
-TOOLCHAIN_API="https://api.${IBMCLOUD_REGION}.devops.cloud.ibm.com/toolchain/v2"
-PIPELINE_API="https://api.${IBMCLOUD_REGION}.devops.cloud.ibm.com/pipeline/v2"
+TOOLCHAIN_API="https://api.${IBMCLOUD_REGION}.devops.test.cloud.ibm.com/toolchain/v2"
+PIPELINE_API="https://api.${IBMCLOUD_REGION}.devops.test.cloud.ibm.com/pipeline/v2"
 
 # ---------------------------------------------------------------------------
 # 1. Authenticate
 # ---------------------------------------------------------------------------
 echo "==> Logging in to IBM Cloud..."
-ibmcloud login --apikey "${IBMCLOUD_API_KEY}" -r "${IBMCLOUD_REGION}" -q
+ibmcloud login --apikey "${IBMCLOUD_API_KEY}" -r "${IBMCLOUD_REGION}" -a "https://test.cloud.ibm.com" -q
 
 echo "==> Targeting resource group '${RESOURCE_GROUP}'..."
 ibmcloud target -g "${RESOURCE_GROUP}"
@@ -184,7 +184,7 @@ if [[ -z "${DEFINITION_ID}" ]]; then
     echo "  added as a tool integration in the toolchain."
     echo ""
     echo "  1. Open the toolchain in the IBM Cloud Console:"
-    echo "     https://cloud.ibm.com/devops/toolchains/${TOOLCHAIN_ID}?env_id=ibm:yp:${IBMCLOUD_REGION}"
+    echo "     https://test.cloud.ibm.com/devops/toolchains/${TOOLCHAIN_ID}?env_id=ibm:yp:${IBMCLOUD_REGION}"
     echo ""
     echo "  2. Click 'Add tool' → select your git provider"
     echo "     (GitHub, GitHub Enterprise, GitLab, etc.)"
@@ -283,4 +283,4 @@ fi
 
 echo ""
 echo "==> Done! Check the PipelineRun logs in the IBM Cloud Console:"
-echo "    https://cloud.ibm.com/devops/pipelines/tekton/${PIPELINE_ID}?env_id=ibm:yp:${IBMCLOUD_REGION}"
+echo "    https://test.cloud.ibm.com/devops/pipelines/tekton/${PIPELINE_ID}?env_id=ibm:yp:${IBMCLOUD_REGION}"

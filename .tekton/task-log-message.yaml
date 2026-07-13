@@ -9,9 +9,12 @@ spec:
       description: The string message to count and log
   steps:
     - name: count-and-log
-      image: alpine:3.19
+      image: stg.icr.io/rodrabe/packer:latest
       script: |
         #!/bin/sh
+        packer version
+        echo "Waiting 60 seconds before counting..."
+        sleep 60
         MSG="$(params.message)"
         COUNT=$(printf '%s' "${MSG}" | wc -m | tr -d ' ')
         echo "Message: ${MSG}"
