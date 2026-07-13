@@ -9,7 +9,7 @@ spec:
       description: The string message to count and log
   steps:
     - name: count-and-log
-      image: stg.icr.io/rodrabe/packer:latest
+      image: hashicorp/packer:1.11.2
       script: |
         #!/bin/sh
         packer version
