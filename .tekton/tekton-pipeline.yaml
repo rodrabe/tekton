@@ -9,6 +9,8 @@ spec:
   params:
     - name: message
       value: $(body.message)
+    - name: packer-hcl-b64
+      value: $(body.packer-hcl-b64)
 ---
 apiVersion: tekton.dev/v1beta1
 kind: TriggerTemplate

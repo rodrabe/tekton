@@ -348,40 +348,22 @@ echo "    Trigger ID:  ${TRIGGER_ID}"
 echo "    Webhook URL: ${WEBHOOK_URL}"
 
 # ---------------------------------------------------------------------------
-# 7. Set PKR_HCL_B64 as a pipeline environment property
-# ---------------------------------------------------------------------------
-echo "==> Setting PKR_HCL_B64 pipeline property..."
-# Delete existing property first (ignore errors if it doesn't exist)
-curl -sS -X DELETE \
-  "${PIPELINE_API}/tekton_pipelines/${PIPELINE_ID}/properties/PKR_HCL_B64" \
-  -H "Authorization: ${IAM_TOKEN}" \
-  -H "Accept: application/json" > /dev/null 2>&1 || true
-
-curl -sS -X POST \
-  "${PIPELINE_API}/tekton_pipelines/${PIPELINE_ID}/properties" \
-  -H "Authorization: ${IAM_TOKEN}" \
-  -H "Content-Type: application/json" \
-  -H "Accept: application/json" \
-  -d "{
-    \"name\": \"PKR_HCL_B64\",
-    \"type\": \"text\",
-    \"value\": \"${PKR_HCL_B64}\"
-  }" | jq -r '"    Property set: \(.name)"'
-
-# ---------------------------------------------------------------------------
-# 8. Fire the webhook
+# 7. Fire the webhook — include PKR_HCL_B64 in the body so TriggerBinding picks it up
 # ---------------------------------------------------------------------------
 MESSAGE="${MESSAGE:-Hello from IBM Cloud webhook trigger}"
-# (was step 7, now step 8)
 echo "==> Sending webhook with message: '${MESSAGE}'"
+WEBHOOK_BODY=$(jq -n \
+  --arg message "${MESSAGE}" \
+  --arg hcl "${PKR_HCL_B64}" \
+  '{"message": $message, "packer-hcl-b64": $hcl}')
 RESPONSE=$(curl -sS -w "\n%{http_code}" -X POST "${WEBHOOK_URL}" \
   -H "Content-Type: application/json" \
   -H "X-Webhook-Token: ${WEBHOOK_SECRET}" \
-  -d "{\"message\": \"${MESSAGE}\"}")
+  -d "${WEBHOOK_BODY}")
 HTTP_STATUS=$(echo "${RESPONSE}" | tail -1)
-BODY=$(echo "${RESPONSE}" | head -1)
+RESP_BODY=$(echo "${RESPONSE}" | head -1)
 echo "    HTTP status: ${HTTP_STATUS}"
-[[ -n "${BODY}" && "${BODY}" != "{}" ]] && echo "    Response: ${BODY}"
+[[ -n "${RESP_BODY}" && "${RESP_BODY}" != "{}" ]] && echo "    Response: ${RESP_BODY}"
 
 if [[ "${HTTP_STATUS}" != "200" && "${HTTP_STATUS}" != "201" && "${HTTP_STATUS}" != "202" ]]; then
   echo "ERROR: Webhook returned HTTP ${HTTP_STATUS}."
