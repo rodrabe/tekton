@@ -19,6 +19,9 @@
 #   MESSAGE             — payload message (defaults to "Hello from IBM Cloud webhook trigger")
 #   REPO_BRANCH         — git branch for the pipeline definition (defaults to "master")
 #   TEKTON_PATH         — path inside repo containing Tekton YAML (defaults to ".tekton")
+#   PKR_REGISTRY        — registry for the packer HCL (e.g. stg.icr.io/rodrabe)
+#   PKR_IMAGE_NAME      — image name for the packer HCL (default: ibmcloud-cli)
+#   PKR_IMAGE_TAG       — image tag for the packer HCL (default: latest)
 #
 # One-time manual prerequisite (cannot be scripted):
 #   The git repository must be connected to the toolchain as a tool integration via
@@ -46,9 +49,91 @@ PIPELINE_NAME="${PIPELINE_NAME:-log-message-pipeline}"
 WEBHOOK_SECRET="${WEBHOOK_SECRET:-changeme}"
 REPO_BRANCH="${REPO_BRANCH:-main}"
 TEKTON_PATH="${TEKTON_PATH:-.tekton}"
+PKR_REGISTRY="${PKR_REGISTRY:-}"
+PKR_IMAGE_NAME="${PKR_IMAGE_NAME:-ibmcloud-cli}"
+PKR_IMAGE_TAG="${PKR_IMAGE_TAG:-latest}"
 
 TOOLCHAIN_API="https://api.${IBMCLOUD_REGION}.devops.test.cloud.ibm.com/toolchain/v2"
 PIPELINE_API="https://api.${IBMCLOUD_REGION}.devops.test.cloud.ibm.com/pipeline/v2"
+
+# ---------------------------------------------------------------------------
+# 0. Generate ibmcloud.pkr.hcl and encode it as a pipeline property
+# ---------------------------------------------------------------------------
+echo "==> Generating ibmcloud.pkr.hcl..."
+PKR_HCL=$(cat <<PKHCL
+packer {
+  required_plugins {
+    ibmcloud = {
+      source  = "github.com/IBM/ibmcloud"
+      version = ">= 3.0.0"
+    }
+  }
+}
+
+variable "ibmcloud_api_key" {
+  type      = string
+  sensitive = true
+  default   = env("IBMCLOUD_API_KEY")
+}
+
+variable "region" {
+  type    = string
+  default = "${IBMCLOUD_REGION}"
+}
+
+variable "resource_group" {
+  type    = string
+  default = "${RESOURCE_GROUP}"
+}
+
+variable "image_name" {
+  type    = string
+  default = "${PKR_IMAGE_NAME}"
+}
+
+variable "image_tag" {
+  type    = string
+  default = "${PKR_IMAGE_TAG}"
+}
+
+variable "registry" {
+  type    = string
+  default = "${PKR_REGISTRY}"
+}
+
+locals {
+  full_image = var.registry != "" ? "\${var.registry}/\${var.image_name}:\${var.image_tag}" : "\${var.image_name}:\${var.image_tag}"
+}
+
+source "ibmcloud-vpc" "base" {
+  api_key        = var.ibmcloud_api_key
+  region         = var.region
+  resource_group = var.resource_group
+
+  vsi_base_image_name    = "ibm-ubuntu-22-04-minimal-amd64-2"
+  vsi_profile            = "bx2-2x8"
+  vsi_interface          = "public"
+  image_name             = local.full_image
+}
+
+build {
+  sources = ["source.ibmcloud-vpc.base"]
+
+  provisioner "shell" {
+    inline = [
+      "apt-get update -y",
+      "apt-get install -y curl jq ca-certificates",
+      "curl -fsSL https://clis.cloud.ibm.com/install/linux | bash",
+      "ibmcloud plugin install dev -f",
+      "ibmcloud version",
+    ]
+  }
+}
+PKHCL
+)
+
+PKR_HCL_B64=$(printf '%s' "${PKR_HCL}" | base64 | tr -d '\n')
+echo "    HCL generated (${#PKR_HCL} bytes), encoded."
 
 # ---------------------------------------------------------------------------
 # 1. Authenticate
@@ -263,9 +348,31 @@ echo "    Trigger ID:  ${TRIGGER_ID}"
 echo "    Webhook URL: ${WEBHOOK_URL}"
 
 # ---------------------------------------------------------------------------
-# 7. Fire the webhook
+# 7. Set PKR_HCL_B64 as a pipeline environment property
+# ---------------------------------------------------------------------------
+echo "==> Setting PKR_HCL_B64 pipeline property..."
+# Delete existing property first (ignore errors if it doesn't exist)
+curl -sS -X DELETE \
+  "${PIPELINE_API}/tekton_pipelines/${PIPELINE_ID}/properties/PKR_HCL_B64" \
+  -H "Authorization: ${IAM_TOKEN}" \
+  -H "Accept: application/json" > /dev/null 2>&1 || true
+
+curl -sS -X POST \
+  "${PIPELINE_API}/tekton_pipelines/${PIPELINE_ID}/properties" \
+  -H "Authorization: ${IAM_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json" \
+  -d "{
+    \"name\": \"PKR_HCL_B64\",
+    \"type\": \"text\",
+    \"value\": \"${PKR_HCL_B64}\"
+  }" | jq -r '"    Property set: \(.name)"'
+
+# ---------------------------------------------------------------------------
+# 8. Fire the webhook
 # ---------------------------------------------------------------------------
 MESSAGE="${MESSAGE:-Hello from IBM Cloud webhook trigger}"
+# (was step 7, now step 8)
 echo "==> Sending webhook with message: '${MESSAGE}'"
 RESPONSE=$(curl -sS -w "\n%{http_code}" -X POST "${WEBHOOK_URL}" \
   -H "Content-Type: application/json" \
