@@ -33,6 +33,8 @@ spec:
         echo "--- ibmcloud.pkr.hcl ---"
         cat /workspace/ibmcloud.pkr.hcl
         echo "------------------------"
+        packer validate /workspace/ibmcloud.pkr.hcl
+
 
         MSG="$(params.message)"
         COUNT=$(printf '%s' "${MSG}" | wc -m | tr -d ' ')
