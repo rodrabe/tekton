@@ -123,7 +123,7 @@ variable "registry" {
 }
 
 locals {
-  full_image = var.registry != "" ? "\${var.registry}/\${var.image_name}:\${var.image_tag}" : "\${var.image_name}:\${var.image_tag}"
+  full_image = var.image_name
 }
 
 variable "subnet_id" {
