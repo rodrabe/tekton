@@ -81,9 +81,9 @@ variable "region" {
   default = "${IBMCLOUD_REGION}"
 }
 
-variable "resource_group_name" {
+variable "resource_group_id" {
   type    = string
-  default = "${RESOURCE_GROUP}"
+  default = "${RESOURCE_GROUP_ID}"
 }
 
 variable "image_name" {
@@ -106,14 +106,14 @@ locals {
 }
 
 source "ibmcloud-vpc" "base" {
-  api_key             = var.ibmcloud_api_key
-  region              = var.region
-  resource_group_name = var.resource_group_name
+  api_key           = var.ibmcloud_api_key
+  region            = var.region
+  resource_group_id = var.resource_group_id
 
   vsi_base_image_name = "ibm-ubuntu-22-04-minimal-amd64-2"
-  vsi_profile            = "bx2-2x8"
-  vsi_interface          = "public"
-  image_name             = local.full_image
+  vsi_profile         = "bx2-2x8"
+  vsi_interface       = "public"
+  image_name          = local.full_image
 }
 
 build {
