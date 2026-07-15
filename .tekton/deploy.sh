@@ -52,6 +52,7 @@ TEKTON_PATH="${TEKTON_PATH:-.tekton}"
 PKR_REGISTRY="${PKR_REGISTRY:-}"
 PKR_IMAGE_NAME="${PKR_IMAGE_NAME:-ibmcloud-cli}"
 PKR_IMAGE_TAG="${PKR_IMAGE_TAG:-latest}"
+PKR_SUBNET_ID="${PKR_SUBNET_ID:-0726-610dd897-188d-4c68-8a7d-f756f556f0c9}"
 
 TOOLCHAIN_API="https://api.${IBMCLOUD_REGION}.devops.test.cloud.ibm.com/toolchain/v2"
 PIPELINE_API="https://api.${IBMCLOUD_REGION}.devops.test.cloud.ibm.com/pipeline/v2"
@@ -125,15 +126,24 @@ locals {
   full_image = var.registry != "" ? "\${var.registry}/\${var.image_name}:\${var.image_tag}" : "\${var.image_name}:\${var.image_tag}"
 }
 
+variable "subnet_id" {
+  type    = string
+  default = "${PKR_SUBNET_ID}"
+}
+
 source "ibmcloud-vpc" "base" {
   api_key           = var.ibmcloud_api_key
   region            = var.region
   resource_group_id = var.resource_group_id
+  subnet_id         = var.subnet_id
 
   vsi_base_image_name = "ibm-ubuntu-22-04-minimal-amd64-2"
   vsi_profile         = "bx2-2x8"
   vsi_interface       = "public"
   image_name          = local.full_image
+
+  communicator  = "ssh"
+  ssh_username  = "root"
 }
 
 build {
