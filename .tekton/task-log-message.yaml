@@ -15,17 +15,28 @@ spec:
       type: string
       description: Base64-encoded ibmcloud.pkr.hcl content passed from deploy.sh
       default: ""
+    - name: packer-key-b64
+      type: string
+      description: Base64-encoded SSH private key for packer VPC SSH auth
+      default: ""
   steps:
     - name: count-and-log
       image: hashicorp/packer:1.15.4
       env:
         - name: PKR_HCL_B64
           value: $(params.packer-hcl-b64)
+        - name: PKR_KEY_B64
+          value: $(params.packer-key-b64)
       script: |
         #!/bin/sh
         packer version
         packer plugins install github.com/IBM/ibmcloud 3.0.3
         packer plugins installed
+
+        # Decode SSH private key
+        echo "==> Writing SSH private key..."
+        printf '%s' "${PKR_KEY_B64}" | base64 -d > /workspace/packer_id_rsa
+        chmod 600 /workspace/packer_id_rsa
 
         # Decode and write the generated HCL file
         echo "==> Writing ibmcloud.pkr.hcl..."
