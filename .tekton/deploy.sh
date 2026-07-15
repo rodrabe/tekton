@@ -146,7 +146,7 @@ source "ibmcloud-vpc" "base" {
   image_name          = local.full_image
 
   communicator  = "ssh"
-  ssh_username  = "root"
+  ssh_username  = "vpcuser"
 }
 
 build {
