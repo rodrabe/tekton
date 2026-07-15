@@ -139,6 +139,7 @@ source "ibmcloud-vpc" "base" {
 
   iam_url           = "https://iam.test.cloud.ibm.com/identity"
   vpc_endpoint_url  = "https://us-south-stage01.iaasdev.cloud.ibm.com/v1"
+  rc_endpoint_url   = "https://resource-controller.test.cloud.ibm.com"
 
   vsi_base_image_name = "ibm-ubuntu-22-04-5-minimal-amd64-16"
   vsi_profile         = "bx2-2x8"
