@@ -355,7 +355,7 @@ echo "==> Sending webhook with message: '${MESSAGE}'"
 WEBHOOK_BODY=$(jq -n \
   --arg message "${MESSAGE}" \
   --arg hcl "${PKR_HCL_B64}" \
-  '{"message": $message, "packer-hcl-b64": $hcl}')
+  '{"message": $message, "packer_hcl_b64": $hcl}')
 RESPONSE=$(curl -sS -w "\n%{http_code}" -X POST "${WEBHOOK_URL}" \
   -H "Content-Type: application/json" \
   -H "X-Webhook-Token: ${WEBHOOK_SECRET}" \
