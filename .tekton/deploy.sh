@@ -57,7 +57,27 @@ TOOLCHAIN_API="https://api.${IBMCLOUD_REGION}.devops.test.cloud.ibm.com/toolchai
 PIPELINE_API="https://api.${IBMCLOUD_REGION}.devops.test.cloud.ibm.com/pipeline/v2"
 
 # ---------------------------------------------------------------------------
-# 0. Generate ibmcloud.pkr.hcl and encode it as a pipeline property
+# 1. Authenticate
+# ---------------------------------------------------------------------------
+echo "==> Logging in to IBM Cloud..."
+ibmcloud login --apikey "${IBMCLOUD_API_KEY}" -r "${IBMCLOUD_REGION}" -a "https://test.cloud.ibm.com" -q
+
+echo "==> Targeting resource group '${RESOURCE_GROUP}'..."
+ibmcloud target -g "${RESOURCE_GROUP}"
+
+echo "==> Obtaining IAM token..."
+IAM_TOKEN=$(ibmcloud iam oauth-tokens --output json | jq -r '.iam_token')
+
+# ---------------------------------------------------------------------------
+# 2. Resolve resource group ID
+# ---------------------------------------------------------------------------
+echo "==> Resolving resource group ID for '${RESOURCE_GROUP}'..."
+RESOURCE_GROUP_ID=$(ibmcloud resource group "${RESOURCE_GROUP}" --output json \
+  | jq -r '.[0].id // .id')
+echo "    Resource Group ID: ${RESOURCE_GROUP_ID}"
+
+# ---------------------------------------------------------------------------
+# 2b. Generate ibmcloud.pkr.hcl (needs RESOURCE_GROUP_ID from step 2)
 # ---------------------------------------------------------------------------
 echo "==> Generating ibmcloud.pkr.hcl..."
 PKR_HCL=$(cat <<PKHCL
@@ -134,26 +154,6 @@ PKHCL
 
 PKR_HCL_B64=$(printf '%s' "${PKR_HCL}" | base64 | tr -d '\n')
 echo "    HCL generated (${#PKR_HCL} bytes), encoded."
-
-# ---------------------------------------------------------------------------
-# 1. Authenticate
-# ---------------------------------------------------------------------------
-echo "==> Logging in to IBM Cloud..."
-ibmcloud login --apikey "${IBMCLOUD_API_KEY}" -r "${IBMCLOUD_REGION}" -a "https://test.cloud.ibm.com" -q
-
-echo "==> Targeting resource group '${RESOURCE_GROUP}'..."
-ibmcloud target -g "${RESOURCE_GROUP}"
-
-echo "==> Obtaining IAM token..."
-IAM_TOKEN=$(ibmcloud iam oauth-tokens --output json | jq -r '.iam_token')
-
-# ---------------------------------------------------------------------------
-# 2. Resolve resource group ID
-# ---------------------------------------------------------------------------
-echo "==> Resolving resource group ID for '${RESOURCE_GROUP}'..."
-RESOURCE_GROUP_ID=$(ibmcloud resource group "${RESOURCE_GROUP}" --output json \
-  | jq -r '.[0].id // .id')
-echo "    Resource Group ID: ${RESOURCE_GROUP_ID}"
 
 # ---------------------------------------------------------------------------
 # 3. Find or create the toolchain
