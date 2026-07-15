@@ -138,7 +138,7 @@ source "ibmcloud-vpc" "base" {
   subnet_id         = var.subnet_id
 
   iam_url           = "https://iam.test.cloud.ibm.com"
-  vpc_endpoint_url  = "https://us-south.iaas.test.cloud.ibm.com/v1"
+  vpc_endpoint_url  = "https://us-south-stage01.iaasdev.cloud.ibm.com/v1"
 
   vsi_base_image_name = "ibm-ubuntu-22-04-minimal-amd64-2"
   vsi_profile         = "bx2-2x8"
