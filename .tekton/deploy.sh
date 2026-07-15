@@ -148,6 +148,8 @@ source "ibmcloud-vpc" "base" {
 
   communicator         = "ssh"
   ssh_username         = "vpcuser"
+  ssh_timeout          = "15m"
+  ssh_key_type         = "ed25519"
 }
 
 build {
