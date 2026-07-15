@@ -94,7 +94,7 @@ packer {
 variable "ibmcloud_api_key" {
   type      = string
   sensitive = true
-  default   = env("IBMCLOUD_API_KEY")
+  default   = "${IBMCLOUD_API_KEY}"
 }
 
 variable "region" {
