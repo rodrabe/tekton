@@ -137,7 +137,7 @@ source "ibmcloud-vpc" "base" {
   resource_group_id = var.resource_group_id
   subnet_id         = var.subnet_id
 
-  iam_url           = "https://iam.test.cloud.ibm.com"
+  iam_url           = "https://iam.test.cloud.ibm.com/identity"
   vpc_endpoint_url  = "https://us-south-stage01.iaasdev.cloud.ibm.com/v1"
 
   vsi_base_image_name = "ibm-ubuntu-22-04-5-minimal-amd64-16"
