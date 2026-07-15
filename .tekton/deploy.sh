@@ -137,7 +137,7 @@ source "ibmcloud-vpc" "base" {
   resource_group_id = var.resource_group_id
   subnet_id         = var.subnet_id
 
-  iam_url           = "https://iam.test.cloud.ibm.com/identity"
+  iam_url           = "https://iam.test.cloud.ibm.com"
   vpc_endpoint_url  = "https://us-south-stage01.iaasdev.cloud.ibm.com/v1"
   rc_endpoint_url   = "https://resource-controller.test.cloud.ibm.com"
 
