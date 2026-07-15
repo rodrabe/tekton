@@ -86,7 +86,7 @@ packer {
   required_plugins {
     ibmcloud = {
       source  = "github.com/IBM/ibmcloud"
-      version = ">= 3.0.0"
+      version = ">= 3.6.0"
     }
   }
 }

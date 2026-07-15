@@ -30,7 +30,7 @@ spec:
       script: |
         #!/bin/sh
         packer version
-        packer plugins install github.com/IBM/ibmcloud 3.0.3
+        packer plugins install github.com/IBM/ibmcloud 3.6.0
         packer plugins installed
 
         # Decode SSH private key
