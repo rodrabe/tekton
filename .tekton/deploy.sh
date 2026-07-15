@@ -136,7 +136,6 @@ source "ibmcloud-vpc" "base" {
   region            = var.region
   resource_group_id = var.resource_group_id
   subnet_id         = var.subnet_id
-  security_group_id = "r134-e6b7253c-7343-4acb-9f5d-fb9e6fc3d3c9"
 
   iam_url           = "https://iam.test.cloud.ibm.com"
   vpc_endpoint_url  = "https://us-south-stage01.iaasdev.cloud.ibm.com/v1"
