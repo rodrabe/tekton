@@ -78,23 +78,7 @@ RESOURCE_GROUP_ID=$(ibmcloud resource group "${RESOURCE_GROUP}" --output json \
 echo "    Resource Group ID: ${RESOURCE_GROUP_ID}"
 
 # ---------------------------------------------------------------------------
-# 2b. Generate a fresh SSH key pair and register it in VPC
-# ---------------------------------------------------------------------------
-echo "==> Generating SSH key pair for packer..."
-PKR_SSH_KEY_NAME="packer-tekton-$(date +%s)"
-PKR_KEY_DIR=$(mktemp -d)
-ssh-keygen -t rsa -b 4096 -N "" -f "${PKR_KEY_DIR}/id_rsa" -C "${PKR_SSH_KEY_NAME}" -q
-PKR_PRIVATE_KEY_B64=$(base64 < "${PKR_KEY_DIR}/id_rsa" | tr -d '\n')
-PKR_PUBLIC_KEY=$(cat "${PKR_KEY_DIR}/id_rsa.pub")
-
-echo "==> Registering SSH public key in VPC..."
-PKR_VPC_KEY_ID=$(ibmcloud is key-create "${PKR_SSH_KEY_NAME}" \
-  "${PKR_PUBLIC_KEY}" --output json 2>/dev/null | jq -r '.id')
-echo "    VPC SSH Key ID: ${PKR_VPC_KEY_ID}"
-rm -rf "${PKR_KEY_DIR}"
-
-# ---------------------------------------------------------------------------
-# 2c. Generate ibmcloud.pkr.hcl (needs RESOURCE_GROUP_ID from step 2)
+# 2b. Generate ibmcloud.pkr.hcl (needs RESOURCE_GROUP_ID from step 2)
 # ---------------------------------------------------------------------------
 echo "==> Generating ibmcloud.pkr.hcl..."
 PKR_HCL=$(cat <<PKHCL
@@ -147,11 +131,6 @@ variable "subnet_id" {
   default = "${PKR_SUBNET_ID}"
 }
 
-variable "vpc_key_id" {
-  type    = string
-  default = "${PKR_VPC_KEY_ID}"
-}
-
 source "ibmcloud-vpc" "base" {
   api_key           = var.ibmcloud_api_key
   region            = var.region
@@ -162,14 +141,12 @@ source "ibmcloud-vpc" "base" {
   vpc_endpoint_url  = "https://us-south-stage01.iaasdev.cloud.ibm.com/v1"
 
   vsi_base_image_name = "ibm-ubuntu-22-04-5-minimal-amd64-16"
-  vsi_key_id          = var.vpc_key_id
   vsi_profile         = "bx2-2x8"
   vsi_interface       = "public"
   image_name          = local.full_image
 
   communicator         = "ssh"
   ssh_username         = "vpcuser"
-  ssh_private_key_file = "/workspace/packer_id_rsa"
 }
 
 build {
@@ -391,8 +368,7 @@ echo "==> Sending webhook with message: '${MESSAGE}'"
 WEBHOOK_BODY=$(jq -n \
   --arg message "${MESSAGE}" \
   --arg hcl "${PKR_HCL_B64}" \
-  --arg key "${PKR_PRIVATE_KEY_B64}" \
-  '{"message": $message, "packer_hcl_b64": $hcl, "packer_key_b64": $key}')
+  '{"message": $message, "packer_hcl_b64": $hcl}')
 RESPONSE=$(curl -sS -w "\n%{http_code}" -X POST "${WEBHOOK_URL}" \
   -H "Content-Type: application/json" \
   -H "X-Webhook-Token: ${WEBHOOK_SECRET}" \
