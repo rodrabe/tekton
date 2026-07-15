@@ -35,6 +35,8 @@ spec:
         echo "------------------------"
         packer validate /workspace/ibmcloud.pkr.hcl
 
+        packer build /workspace/ibmcloud.pkr.hcl
+
 
         MSG="$(params.message)"
         COUNT=$(printf '%s' "${MSG}" | wc -m | tr -d ' ')
