@@ -160,6 +160,9 @@ build {
     execute_command = "sudo sh -c '{{ .Vars }} {{ .Path }}'"
     inline = [
       "apt-get update -y",
+      "apt-get install -y software-properties-common",
+      "add-apt-repository universe -y",
+      "apt-get update -y",
       "apt-get install -y curl jq ca-certificates",
       "curl -fsSL https://clis.cloud.ibm.com/install/linux | bash",
       "ibmcloud plugin install dev -f",
