@@ -156,6 +156,7 @@ build {
   sources = ["source.ibmcloud-vpc.base"]
 
   provisioner "shell" {
+    execute_command = "sudo sh -c '{{ .Vars }} {{ .Path }}'"
     inline = [
       "apt-get update -y",
       "apt-get install -y curl jq ca-certificates",
