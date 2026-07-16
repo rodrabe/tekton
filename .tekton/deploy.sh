@@ -150,7 +150,7 @@ source "ibmcloud-vpc" "base" {
   ssh_username         = "ubuntu"
   ssh_timeout          = "15m"
   ssh_key_type         = "ed25519"
-  timeout              = 30
+  timeout              = "30m"
 }
 
 build {
