@@ -147,7 +147,7 @@ source "ibmcloud-vpc" "base" {
   image_name          = local.full_image
 
   communicator         = "ssh"
-  ssh_username         = "vpcuser"
+  ssh_username         = "ubuntu"
   ssh_timeout          = "15m"
   ssh_key_type         = "ed25519"
 }
