@@ -23,9 +23,9 @@ spec:
     - name: count-and-log
       image: hashicorp/packer:1.15.4
       env:
-        - name: PKR_HCL_B64
+        - name: STEP_PKR_HCL_B64
           value: $(params.packer-hcl-b64)
-        - name: PKR_KEY_B64
+        - name: STEP_PKR_KEY_B64
           value: $(params.packer-key-b64)
       script: |
         #!/usr/bin/env bash
@@ -39,12 +39,12 @@ spec:
 
         # Decode SSH private key
         echo "==> Writing SSH private key..."
-        printf '%s' "${PKR_KEY_B64}" | base64 -d > /workspace/packer_id_rsa
+        printf '%s' "${STEP_PKR_KEY_B64}" | base64 -d > /workspace/packer_id_rsa
         chmod 600 /workspace/packer_id_rsa
 
         # Decode and write the generated HCL file
         echo "==> Writing ibmcloud.pkr.hcl..."
-        printf '%s' "${PKR_HCL_B64}" | base64 -d > /workspace/ibmcloud.pkr.hcl
+        printf '%s' "${STEP_PKR_HCL_B64}" | base64 -d > /workspace/ibmcloud.pkr.hcl
         echo "--- ibmcloud.pkr.hcl ---"
         cat /workspace/ibmcloud.pkr.hcl
         echo "------------------------"
