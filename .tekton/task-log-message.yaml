@@ -7,6 +7,10 @@ spec:
     - name: message
       type: string
       description: The string message to count and log
+    - name: image-name
+      type: string
+      description: The Packer image name produced by this run (with timestamp)
+      default: ""
     - name: packer-ibm-version
       type: string
       description: IBM Cloud Packer plugin version to install
@@ -19,6 +23,13 @@ spec:
       type: string
       description: Base64-encoded SSH private key for packer VPC SSH auth
       default: ""
+  results:
+    - name: message
+      description: The original message string
+    - name: character-count
+      description: Number of characters in the message
+    - name: image-name
+      description: The Packer image name produced by this run
   steps:
     - name: count-and-log
       image: hashicorp/packer:1.15.4
@@ -56,3 +67,8 @@ spec:
         COUNT=$(printf '%s' "${MSG}" | wc -m | tr -d ' ')
         echo "Message: ${MSG}"
         echo "Character count: ${COUNT}"
+
+        # Write Tekton results for Task 2 to consume
+        printf '%s' "${MSG}"   > "$(results.message.path)"
+        printf '%s' "${COUNT}" > "$(results.character-count.path)"
+        printf '%s' "$(params.image-name)" > "$(results.image-name.path)"

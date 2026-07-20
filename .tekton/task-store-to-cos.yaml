@@ -1,0 +1,69 @@
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: store-to-cos
+spec:
+  params:
+    - name: message
+      type: string
+      description: The original message string from task 1
+    - name: character-count
+      type: string
+      description: Character count from task 1
+    - name: image-name
+      type: string
+      description: Packer image name from task 1
+    - name: cos-bucket
+      type: string
+      description: COS bucket name to write the summary file to
+    - name: cos-region
+      type: string
+      description: COS region (e.g. us-south)
+      default: "us-south"
+    - name: ibmcloud-api-key
+      type: string
+      description: IBM Cloud API key (SECURE — do not log)
+  steps:
+    - name: upload
+      image: ibmcom/ibmcloud-cli:latest
+      env:
+        - name: STEP_API_KEY
+          value: $(params.ibmcloud-api-key)
+        - name: STEP_BUCKET
+          value: $(params.cos-bucket)
+        - name: STEP_REGION
+          value: $(params.cos-region)
+      script: |
+        #!/usr/bin/env bash
+        set -euo pipefail
+
+        MSG="$(params.message)"
+        COUNT="$(params.character-count)"
+        IMAGE="$(params.image-name)"
+        TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+        OBJECT_KEY="pipeline-runs/${TIMESTAMP}-summary.json"
+
+        # Build JSON summary
+        PAYLOAD=$(printf '{"timestamp":"%s","message":"%s","character_count":%s,"image_name":"%s"}' \
+          "${TIMESTAMP}" "${MSG}" "${COUNT}" "${IMAGE}")
+
+        echo "==> Summary:"
+        echo "${PAYLOAD}" | tr ',' '\n'
+
+        # Write to a temp file (ibmcloud cos object-put reads from file)
+        printf '%s' "${PAYLOAD}" > /tmp/summary.json
+
+        echo "==> Logging in to IBM Cloud..."
+        ibmcloud login --apikey "${STEP_API_KEY}" -r "${STEP_REGION}" -q
+
+        echo "==> Installing COS plugin..."
+        ibmcloud plugin install cloud-object-storage -f -q
+
+        echo "==> Uploading to s3://${STEP_BUCKET}/${OBJECT_KEY} ..."
+        ibmcloud cos object-put \
+          --bucket "${STEP_BUCKET}" \
+          --key    "${OBJECT_KEY}" \
+          --body   /tmp/summary.json \
+          --content-type "application/json"
+
+        echo "==> Stored: s3://${STEP_BUCKET}/${OBJECT_KEY}"

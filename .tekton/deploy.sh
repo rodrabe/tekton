@@ -11,16 +11,18 @@
 #   IBMCLOUD_REGION     — e.g. us-south
 #   RESOURCE_GROUP      — exact resource group name (case-sensitive)
 #   REPO_URL            — HTTPS URL of this git repository
+#   COS_BUCKET          — COS bucket name to store the run summary JSON
 #
 # Optional environment variables:
 #   TOOLCHAIN_NAME      — defaults to log-message-toolchain
 #   PIPELINE_NAME       — defaults to log-message-pipeline
 #   WEBHOOK_SECRET      — token sent in X-Webhook-Token header (defaults to "changeme")
 #   MESSAGE             — payload message (defaults to "Hello from IBM Cloud webhook trigger")
-#   REPO_BRANCH         — git branch for the pipeline definition (defaults to "master")
+#   REPO_BRANCH         — git branch for the pipeline definition (defaults to "main")
 #   TEKTON_PATH         — path inside repo containing Tekton YAML (defaults to ".tekton")
+#   COS_REGION          — COS region (defaults to IBMCLOUD_REGION)
 #   PKR_REGISTRY        — registry for the packer HCL (e.g. stg.icr.io/rodrabe)
-#   PKR_IMAGE_NAME      — image name for the packer HCL (default: ibmcloud-cli)
+#   PKR_IMAGE_NAME      — base image name (timestamp appended automatically, default: ibmcloud-cli)
 #   PKR_IMAGE_TAG       — image tag for the packer HCL (default: latest)
 #
 # One-time manual prerequisite (cannot be scripted):
@@ -43,12 +45,14 @@ set -euo pipefail
 : "${IBMCLOUD_REGION:?Must set IBMCLOUD_REGION}"
 : "${RESOURCE_GROUP:?Must set RESOURCE_GROUP}"
 : "${REPO_URL:?Must set REPO_URL}"
+: "${COS_BUCKET:?Must set COS_BUCKET}"
 
 TOOLCHAIN_NAME="${TOOLCHAIN_NAME:-log-message-toolchain}"
 PIPELINE_NAME="${PIPELINE_NAME:-log-message-pipeline}"
 WEBHOOK_SECRET="${WEBHOOK_SECRET:-changeme}"
 REPO_BRANCH="${REPO_BRANCH:-main}"
 TEKTON_PATH="${TEKTON_PATH:-.tekton}"
+COS_REGION="${COS_REGION:-${IBMCLOUD_REGION}}"
 PKR_REGISTRY="${PKR_REGISTRY:-}"
 # Append a UTC timestamp to the image name so each build produces a unique image.
 # Override PKR_IMAGE_NAME to use a fixed name (e.g. for idempotent rebuilds).
@@ -385,14 +389,27 @@ echo "    Trigger ID:  ${TRIGGER_ID}"
 echo "    Webhook URL: ${WEBHOOK_URL}"
 
 # ---------------------------------------------------------------------------
-# 7. Fire the webhook — include PKR_HCL_B64 in the body so TriggerBinding picks it up
+# 7. Fire the webhook
 # ---------------------------------------------------------------------------
 MESSAGE="${MESSAGE:-Hello from IBM Cloud webhook trigger}"
 echo "==> Sending webhook with message: '${MESSAGE}'"
+echo "    Image name:  ${PKR_IMAGE_NAME}"
+echo "    COS bucket:  ${COS_BUCKET}"
 WEBHOOK_BODY=$(jq -n \
-  --arg message "${MESSAGE}" \
-  --arg hcl "${PKR_HCL_B64}" \
-  '{"message": $message, "packer_hcl_b64": $hcl}')
+  --arg message         "${MESSAGE}" \
+  --arg image_name      "${PKR_IMAGE_NAME}" \
+  --arg cos_bucket      "${COS_BUCKET}" \
+  --arg cos_region      "${COS_REGION}" \
+  --arg ibmcloud_api_key "${IBMCLOUD_API_KEY}" \
+  --arg hcl             "${PKR_HCL_B64}" \
+  '{
+    "message":          $message,
+    "image_name":       $image_name,
+    "cos_bucket":       $cos_bucket,
+    "cos_region":       $cos_region,
+    "ibmcloud_api_key": $ibmcloud_api_key,
+    "packer_hcl_b64":   $hcl
+  }')
 RESPONSE=$(curl -sS -w "\n%{http_code}" -X POST "${WEBHOOK_URL}" \
   -H "Content-Type: application/json" \
   -H "X-Webhook-Token: ${WEBHOOK_SECRET}" \
