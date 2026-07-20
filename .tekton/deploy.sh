@@ -67,7 +67,7 @@ echo "==> Targeting resource group '${RESOURCE_GROUP}'..."
 ibmcloud target -g "${RESOURCE_GROUP}"
 
 echo "==> Obtaining IAM token..."
-IAM_TOKEN=$(ibmcloud iam oauth-tokens --output json | jq -r '.iam_token')
+IAM_TOKEN=$(ibmcloud iam oauth-tokens --output json 2>/dev/null | jq -r '.iam_token')
 
 # ---------------------------------------------------------------------------
 # 2. Resolve resource group ID
@@ -81,7 +81,9 @@ echo "    Resource Group ID: ${RESOURCE_GROUP_ID}"
 # 2b. Generate ibmcloud.pkr.hcl (needs RESOURCE_GROUP_ID from step 2)
 # ---------------------------------------------------------------------------
 echo "==> Generating ibmcloud.pkr.hcl..."
-PKR_HCL=$(cat <<PKHCL
+# Quote the heredoc delimiter (<<'PKHCL') to prevent bash from expanding ${}
+# inside the Packer HCL template — variables are substituted via sed below.
+PKR_HCL=$(cat <<'PKHCL'
 packer {
   required_plugins {
     ibmcloud = {
@@ -94,32 +96,32 @@ packer {
 variable "ibmcloud_api_key" {
   type      = string
   sensitive = true
-  default   = "${IBMCLOUD_API_KEY}"
+  default   = "TMPL_API_KEY"
 }
 
 variable "region" {
   type    = string
-  default = "${IBMCLOUD_REGION}"
+  default = "TMPL_REGION"
 }
 
 variable "resource_group_id" {
   type    = string
-  default = "${RESOURCE_GROUP_ID}"
+  default = "TMPL_RESOURCE_GROUP_ID"
 }
 
 variable "image_name" {
   type    = string
-  default = "${PKR_IMAGE_NAME}"
+  default = "TMPL_IMAGE_NAME"
 }
 
 variable "image_tag" {
   type    = string
-  default = "${PKR_IMAGE_TAG}"
+  default = "TMPL_IMAGE_TAG"
 }
 
 variable "registry" {
   type    = string
-  default = "${PKR_REGISTRY}"
+  default = "TMPL_REGISTRY"
 }
 
 locals {
@@ -128,7 +130,7 @@ locals {
 
 variable "subnet_id" {
   type    = string
-  default = "${PKR_SUBNET_ID}"
+  default = "TMPL_SUBNET_ID"
 }
 
 source "ibmcloud-vpc" "base" {
@@ -172,6 +174,17 @@ build {
 }
 PKHCL
 )
+
+# Now substitute the template placeholders with the real values
+PKR_HCL=$(printf '%s' "${PKR_HCL}" \
+  | sed \
+      -e "s|TMPL_API_KEY|${IBMCLOUD_API_KEY}|g" \
+      -e "s|TMPL_REGION|${IBMCLOUD_REGION}|g" \
+      -e "s|TMPL_RESOURCE_GROUP_ID|${RESOURCE_GROUP_ID}|g" \
+      -e "s|TMPL_IMAGE_NAME|${PKR_IMAGE_NAME}|g" \
+      -e "s|TMPL_IMAGE_TAG|${PKR_IMAGE_TAG}|g" \
+      -e "s|TMPL_REGISTRY|${PKR_REGISTRY}|g" \
+      -e "s|TMPL_SUBNET_ID|${PKR_SUBNET_ID}|g")
 
 PKR_HCL_B64=$(printf '%s' "${PKR_HCL}" | base64 | tr -d '\n')
 echo "    HCL generated (${#PKR_HCL} bytes), encoded."
