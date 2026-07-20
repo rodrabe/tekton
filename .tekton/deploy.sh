@@ -50,7 +50,10 @@ WEBHOOK_SECRET="${WEBHOOK_SECRET:-changeme}"
 REPO_BRANCH="${REPO_BRANCH:-main}"
 TEKTON_PATH="${TEKTON_PATH:-.tekton}"
 PKR_REGISTRY="${PKR_REGISTRY:-}"
-PKR_IMAGE_NAME="${PKR_IMAGE_NAME:-ibmcloud-cli}"
+# Append a UTC timestamp to the image name so each build produces a unique image.
+# Override PKR_IMAGE_NAME to use a fixed name (e.g. for idempotent rebuilds).
+PKR_TIMESTAMP="$(date -u +%Y%m%d%H%M%S)"
+PKR_IMAGE_NAME="${PKR_IMAGE_NAME:-ibmcloud-cli}-${PKR_TIMESTAMP}"
 PKR_IMAGE_TAG="${PKR_IMAGE_TAG:-latest}"
 PKR_SUBNET_ID="${PKR_SUBNET_ID:-0726-610dd897-188d-4c68-8a7d-f756f556f0c9}"
 
