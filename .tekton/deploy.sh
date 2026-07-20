@@ -11,7 +11,6 @@
 #   IBMCLOUD_REGION     — e.g. us-south
 #   RESOURCE_GROUP      — exact resource group name (case-sensitive)
 #   REPO_URL            — HTTPS URL of this git repository
-#   COS_BUCKET          — COS bucket name to store the run summary JSON
 #
 # Optional environment variables:
 #   TOOLCHAIN_NAME      — defaults to log-message-toolchain
@@ -24,6 +23,7 @@
 #   PKR_REGISTRY        — registry for the packer HCL (e.g. stg.icr.io/rodrabe)
 #   PKR_IMAGE_NAME      — base image name (timestamp appended automatically, default: ibmcloud-cli)
 #   PKR_IMAGE_TAG       — image tag for the packer HCL (default: latest)
+#   COS_BUCKET          — COS bucket name (defaults to the timestamped image name)
 #
 # One-time manual prerequisite (cannot be scripted):
 #   The git repository must be connected to the toolchain as a tool integration via
@@ -45,7 +45,6 @@ set -euo pipefail
 : "${IBMCLOUD_REGION:?Must set IBMCLOUD_REGION}"
 : "${RESOURCE_GROUP:?Must set RESOURCE_GROUP}"
 : "${REPO_URL:?Must set REPO_URL}"
-: "${COS_BUCKET:?Must set COS_BUCKET}"
 
 TOOLCHAIN_NAME="${TOOLCHAIN_NAME:-log-message-toolchain}"
 PIPELINE_NAME="${PIPELINE_NAME:-log-message-pipeline}"
@@ -58,6 +57,8 @@ PKR_REGISTRY="${PKR_REGISTRY:-}"
 # Override PKR_IMAGE_NAME to use a fixed name (e.g. for idempotent rebuilds).
 PKR_TIMESTAMP="$(date -u +%Y%m%d%H%M%S)"
 PKR_IMAGE_NAME="${PKR_IMAGE_NAME:-ibmcloud-cli}-${PKR_TIMESTAMP}"
+# Use the image name as the COS bucket name (override with COS_BUCKET if needed).
+COS_BUCKET="${COS_BUCKET:-${PKR_IMAGE_NAME}}"
 PKR_IMAGE_TAG="${PKR_IMAGE_TAG:-latest}"
 PKR_SUBNET_ID="${PKR_SUBNET_ID:-0726-610dd897-188d-4c68-8a7d-f756f556f0c9}"
 
