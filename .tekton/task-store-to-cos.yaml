@@ -23,6 +23,10 @@ spec:
     - name: ibmcloud-api-key
       type: string
       description: IBM Cloud API key (SECURE — do not log)
+    - name: cos-instance-crn
+      type: string
+      description: CRN of the COS service instance
+      default: ""
     - name: ibmcloud-api-endpoint
       type: string
       description: IBM Cloud API endpoint (use https://test.cloud.ibm.com for staging)
@@ -45,6 +49,8 @@ spec:
           value: $(params.ibmcloud-api-endpoint)
         - name: STEP_COS_ENDPOINT
           value: $(params.cos-api-endpoint)
+        - name: STEP_COS_CRN
+          value: $(params.cos-instance-crn)
       script: |
         #!/usr/bin/env bash
         set -euo pipefail
@@ -71,6 +77,12 @@ spec:
 
         echo "==> Installing COS plugin..."
         ibmcloud plugin install cloud-object-storage -f -q
+
+        # Configure COS instance CRN so the plugin knows which instance to use
+        if [[ -n "${STEP_COS_CRN}" ]]; then
+          echo "==> Configuring COS instance CRN..."
+          ibmcloud cos config crn --crn "${STEP_COS_CRN}"
+        fi
 
         # Point the COS plugin at the correct service endpoint when using staging
         if [[ -n "${STEP_COS_ENDPOINT}" ]]; then

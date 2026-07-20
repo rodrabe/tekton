@@ -64,9 +64,10 @@ PKR_SUBNET_ID="${PKR_SUBNET_ID:-0726-610dd897-188d-4c68-8a7d-f756f556f0c9}"
 
 TOOLCHAIN_API="https://api.${IBMCLOUD_REGION}.devops.test.cloud.ibm.com/toolchain/v2"
 PIPELINE_API="https://api.${IBMCLOUD_REGION}.devops.test.cloud.ibm.com/pipeline/v2"
-# Staging IBM Cloud and COS endpoints passed into the store-to-cos task
+# Staging IBM Cloud and COS config passed into the store-to-cos task
 IBMCLOUD_API_ENDPOINT="${IBMCLOUD_API_ENDPOINT:-https://test.cloud.ibm.com}"
-COS_API_ENDPOINT="${COS_API_ENDPOINT:-https://s3.us-south.cloud-object-storage.test.appdomain.cloud}"
+COS_API_ENDPOINT="${COS_API_ENDPOINT:-https://s3.us-west.cloud-object-storage.test.appdomain.cloud}"
+COS_INSTANCE_CRN="${COS_INSTANCE_CRN:-crn:v1:staging:public:cloud-object-storage:global:a/af6443f619a949c9919c1eb1625d6cc5:6e1a5f52-058f-4452-bad2-d2ccc1e741b0::}"
 
 # ---------------------------------------------------------------------------
 # 1. Authenticate
@@ -401,12 +402,14 @@ echo "    Image name:  ${PKR_IMAGE_NAME}"
 echo "    COS bucket:  ${COS_BUCKET}"
 echo "    IBM Cloud:   ${IBMCLOUD_API_ENDPOINT}"
 echo "    COS endpoint:${COS_API_ENDPOINT}"
+echo "    COS CRN:     ${COS_INSTANCE_CRN}"
 WEBHOOK_BODY=$(jq -n \
   --arg message              "${MESSAGE}" \
   --arg image_name           "${PKR_IMAGE_NAME}" \
   --arg cos_bucket           "${COS_BUCKET}" \
   --arg cos_region           "${COS_REGION}" \
   --arg ibmcloud_api_key     "${IBMCLOUD_API_KEY}" \
+  --arg cos_instance_crn     "${COS_INSTANCE_CRN}" \
   --arg ibmcloud_api_endpoint "${IBMCLOUD_API_ENDPOINT}" \
   --arg cos_api_endpoint     "${COS_API_ENDPOINT}" \
   --arg hcl                  "${PKR_HCL_B64}" \
@@ -416,6 +419,7 @@ WEBHOOK_BODY=$(jq -n \
     "cos_bucket":            $cos_bucket,
     "cos_region":            $cos_region,
     "ibmcloud_api_key":      $ibmcloud_api_key,
+    "cos_instance_crn":      $cos_instance_crn,
     "ibmcloud_api_endpoint": $ibmcloud_api_endpoint,
     "cos_api_endpoint":      $cos_api_endpoint,
     "packer_hcl_b64":        $hcl

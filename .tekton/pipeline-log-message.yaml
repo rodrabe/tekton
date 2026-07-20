@@ -23,6 +23,10 @@ spec:
       type: string
       description: IBM Cloud API key for COS upload (SECURE)
       default: ""
+    - name: cos-instance-crn
+      type: string
+      description: CRN of the COS service instance
+      default: ""
     - name: ibmcloud-api-endpoint
       type: string
       description: IBM Cloud API endpoint (https://test.cloud.ibm.com for staging)
@@ -70,6 +74,8 @@ spec:
           value: $(params.cos-region)
         - name: ibmcloud-api-key
           value: $(params.ibmcloud-api-key)
+        - name: cos-instance-crn
+          value: $(params.cos-instance-crn)
         - name: ibmcloud-api-endpoint
           value: $(params.ibmcloud-api-endpoint)
         - name: cos-api-endpoint
