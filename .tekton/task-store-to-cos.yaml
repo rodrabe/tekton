@@ -37,7 +37,7 @@ spec:
       default: ""
   steps:
     - name: upload
-      image: ibmcom/ibmcloud-cli:latest
+      image: icr.io/continuous-delivery/pipeline/pipeline-base-image:2.12
       env:
         - name: STEP_API_KEY
           value: $(params.ibmcloud-api-key)

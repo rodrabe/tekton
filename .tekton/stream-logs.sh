@@ -51,10 +51,11 @@ echo "[stream-logs] Polling every ${POLL_INTERVAL}s..."
 echo "---"
 
 # ---------------------------------------------------------------------------
-# Poll loop — track byte offset per log ID to print only new content
+# Poll loop — track byte offset per log ID to print only new content.
+# Uses temp files instead of associative arrays (bash 3 compat on macOS).
 # ---------------------------------------------------------------------------
-declare -A LOG_OFFSET   # log_id -> bytes already printed
-declare -A LOG_SEEN     # log_id -> 1 once we have printed its header
+TMPDIR_LOGS=$(mktemp -d)
+trap 'rm -rf "${TMPDIR_LOGS}"' EXIT
 
 while true; do
   # Refresh IAM token every ~45 min (token TTL is 60 min)
@@ -76,23 +77,26 @@ while true; do
     TASK=$(echo "${LOG_NAME}" | sed 's|.*/\([^/]*\)-pod/.*|\1|')
     STEP=$(echo "${LOG_NAME}" | sed 's|.*/||')
 
+    SEEN_FILE="${TMPDIR_LOGS}/${LOG_ID}.seen"
+    OFFSET_FILE="${TMPDIR_LOGS}/${LOG_ID}.offset"
+
     # Print a header the first time we see this log
-    if [[ -z "${LOG_SEEN[$LOG_ID]:-}" ]]; then
+    if [[ ! -f "${SEEN_FILE}" ]]; then
       echo ""
       echo "=== task: ${TASK}  step: ${STEP} ==="
-      LOG_SEEN[$LOG_ID]=1
-      LOG_OFFSET[$LOG_ID]=0
+      touch "${SEEN_FILE}"
+      echo "0" > "${OFFSET_FILE}"
     fi
 
     # Fetch the log snapshot, skip already-printed bytes
     DATA=$(api "${PIPELINE_API}/tekton_pipelines/${PIPELINE_ID}/pipeline_runs/${RUN_ID}/logs/${LOG_ID}" \
       | jq -r '.data // ""')
 
-    OFFSET=${LOG_OFFSET[$LOG_ID]:-0}
+    OFFSET=$(cat "${OFFSET_FILE}")
     NEW_CONTENT="${DATA:${OFFSET}}"
     if [[ -n "${NEW_CONTENT}" ]]; then
       printf '%s' "${NEW_CONTENT}"
-      LOG_OFFSET[$LOG_ID]=${#DATA}
+      echo "${#DATA}" > "${OFFSET_FILE}"
     fi
   done < <(echo "${LOGS_JSON}" | jq -c '.logs[]')
 

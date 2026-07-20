@@ -39,7 +39,7 @@ ibmcloud plugin install dev
 ## Deploy
 
 ```bash
-export IBMCLOUD_API_KEY="provide your api key"
+export IBMCLOUD_API_KEY=NGnTxZPeC7y3LRumhFw0vMOgf0LrWBtx9TEnubF1Sxda
 export IBMCLOUD_REGION=us-south          # change to your region
 export RESOURCE_GROUP=Default            # exact name, case-sensitive — run: ibmcloud resource groups
 export REPO_URL=https://github.com/rodrabe/tekton
