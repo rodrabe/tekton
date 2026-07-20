@@ -272,8 +272,8 @@ DEFINITION_ID=$(curl -sS -X GET \
   "${PIPELINE_API}/tekton_pipelines/${PIPELINE_ID}/definitions" \
   -H "Authorization: ${IAM_TOKEN}" \
   -H "Accept: application/json" \
-  | jq -r --arg url "${REPO_URL}" \
-    '.definitions[] | select(.source.properties.url == $url) | .id // empty' \
+  | jq -r --arg url "${REPO_URL%.git}" \
+    '.definitions[] | select((.source.properties.url // "" | rtrimstr(".git")) == $url) | .id // empty' \
   | head -1)
 
 if [[ -z "${DEFINITION_ID}" ]]; then
