@@ -64,6 +64,9 @@ PKR_SUBNET_ID="${PKR_SUBNET_ID:-0726-610dd897-188d-4c68-8a7d-f756f556f0c9}"
 
 TOOLCHAIN_API="https://api.${IBMCLOUD_REGION}.devops.test.cloud.ibm.com/toolchain/v2"
 PIPELINE_API="https://api.${IBMCLOUD_REGION}.devops.test.cloud.ibm.com/pipeline/v2"
+# Staging IBM Cloud and COS endpoints passed into the store-to-cos task
+IBMCLOUD_API_ENDPOINT="${IBMCLOUD_API_ENDPOINT:-https://test.cloud.ibm.com}"
+COS_API_ENDPOINT="${COS_API_ENDPOINT:-https://s3.us-south.cloud-object-storage.test.appdomain.cloud}"
 
 # ---------------------------------------------------------------------------
 # 1. Authenticate
@@ -396,20 +399,26 @@ MESSAGE="${MESSAGE:-Hello from IBM Cloud webhook trigger}"
 echo "==> Sending webhook with message: '${MESSAGE}'"
 echo "    Image name:  ${PKR_IMAGE_NAME}"
 echo "    COS bucket:  ${COS_BUCKET}"
+echo "    IBM Cloud:   ${IBMCLOUD_API_ENDPOINT}"
+echo "    COS endpoint:${COS_API_ENDPOINT}"
 WEBHOOK_BODY=$(jq -n \
-  --arg message         "${MESSAGE}" \
-  --arg image_name      "${PKR_IMAGE_NAME}" \
-  --arg cos_bucket      "${COS_BUCKET}" \
-  --arg cos_region      "${COS_REGION}" \
-  --arg ibmcloud_api_key "${IBMCLOUD_API_KEY}" \
-  --arg hcl             "${PKR_HCL_B64}" \
+  --arg message              "${MESSAGE}" \
+  --arg image_name           "${PKR_IMAGE_NAME}" \
+  --arg cos_bucket           "${COS_BUCKET}" \
+  --arg cos_region           "${COS_REGION}" \
+  --arg ibmcloud_api_key     "${IBMCLOUD_API_KEY}" \
+  --arg ibmcloud_api_endpoint "${IBMCLOUD_API_ENDPOINT}" \
+  --arg cos_api_endpoint     "${COS_API_ENDPOINT}" \
+  --arg hcl                  "${PKR_HCL_B64}" \
   '{
-    "message":          $message,
-    "image_name":       $image_name,
-    "cos_bucket":       $cos_bucket,
-    "cos_region":       $cos_region,
-    "ibmcloud_api_key": $ibmcloud_api_key,
-    "packer_hcl_b64":   $hcl
+    "message":               $message,
+    "image_name":            $image_name,
+    "cos_bucket":            $cos_bucket,
+    "cos_region":            $cos_region,
+    "ibmcloud_api_key":      $ibmcloud_api_key,
+    "ibmcloud_api_endpoint": $ibmcloud_api_endpoint,
+    "cos_api_endpoint":      $cos_api_endpoint,
+    "packer_hcl_b64":        $hcl
   }')
 RESPONSE=$(curl -sS -w "\n%{http_code}" -X POST "${WEBHOOK_URL}" \
   -H "Content-Type: application/json" \

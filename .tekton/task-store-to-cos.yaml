@@ -23,6 +23,14 @@ spec:
     - name: ibmcloud-api-key
       type: string
       description: IBM Cloud API key (SECURE — do not log)
+    - name: ibmcloud-api-endpoint
+      type: string
+      description: IBM Cloud API endpoint (use https://test.cloud.ibm.com for staging)
+      default: "https://cloud.ibm.com"
+    - name: cos-api-endpoint
+      type: string
+      description: COS service endpoint (leave empty for production; set for staging)
+      default: ""
   steps:
     - name: upload
       image: ibmcom/ibmcloud-cli:latest
@@ -33,6 +41,10 @@ spec:
           value: $(params.cos-bucket)
         - name: STEP_REGION
           value: $(params.cos-region)
+        - name: STEP_API_ENDPOINT
+          value: $(params.ibmcloud-api-endpoint)
+        - name: STEP_COS_ENDPOINT
+          value: $(params.cos-api-endpoint)
       script: |
         #!/usr/bin/env bash
         set -euo pipefail
@@ -53,11 +65,18 @@ spec:
         # Write to a temp file (ibmcloud cos object-put reads from file)
         printf '%s' "${PAYLOAD}" > /tmp/summary.json
 
-        echo "==> Logging in to IBM Cloud..."
-        ibmcloud login --apikey "${STEP_API_KEY}" -r "${STEP_REGION}" -q
+        echo "==> Logging in to IBM Cloud (${STEP_API_ENDPOINT})..."
+        ibmcloud login --apikey "${STEP_API_KEY}" -r "${STEP_REGION}" \
+          -a "${STEP_API_ENDPOINT}" -q
 
         echo "==> Installing COS plugin..."
         ibmcloud plugin install cloud-object-storage -f -q
+
+        # Point the COS plugin at the correct service endpoint when using staging
+        if [[ -n "${STEP_COS_ENDPOINT}" ]]; then
+          echo "==> Configuring COS endpoint: ${STEP_COS_ENDPOINT}"
+          ibmcloud cos config endpoint-url --url "${STEP_COS_ENDPOINT}"
+        fi
 
         echo "==> Uploading to s3://${STEP_BUCKET}/${OBJECT_KEY} ..."
         ibmcloud cos object-put \
