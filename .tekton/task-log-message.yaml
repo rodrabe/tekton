@@ -28,7 +28,11 @@ spec:
         - name: PKR_KEY_B64
           value: $(params.packer-key-b64)
       script: |
-        #!/bin/sh
+        #!/usr/bin/env bash
+        set -euo pipefail
+        export PACKER_LOG=1
+        export PACKER_LOG_PATH=/dev/stdout
+
         packer version
         packer plugins install github.com/IBM/ibmcloud 3.6.0
         packer plugins installed
@@ -47,7 +51,6 @@ spec:
         packer validate /workspace/ibmcloud.pkr.hcl
 
         packer build /workspace/ibmcloud.pkr.hcl
-
 
         MSG="$(params.message)"
         COUNT=$(printf '%s' "${MSG}" | wc -m | tr -d ' ')
