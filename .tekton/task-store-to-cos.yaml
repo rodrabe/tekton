@@ -76,7 +76,12 @@ spec:
           -a "${STEP_API_ENDPOINT}" -q
 
         echo "==> Installing COS plugin..."
-        ibmcloud plugin install cloud-object-storage -f -q
+        # Download the plugin binary directly to avoid the registry DNS/TLS issue
+        # that produces "invalid character '<'" inside the pipeline container.
+        COS_PLUGIN_URL="https://github.com/IBM/ibmcloud-cos-plugin/releases/latest/download/ibmcloud-cli-cos-plugin-linux-amd64"
+        curl -fsSL "${COS_PLUGIN_URL}" -o /tmp/ibmcloud-cos-plugin
+        chmod +x /tmp/ibmcloud-cos-plugin
+        ibmcloud plugin install /tmp/ibmcloud-cos-plugin -f
 
         # Configure COS instance CRN so the plugin knows which instance to use
         if [[ -n "${STEP_COS_CRN}" ]]; then
