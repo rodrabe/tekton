@@ -76,9 +76,10 @@ spec:
           -a "${STEP_API_ENDPOINT}" -q
 
         echo "==> Installing COS plugin..."
-        # Download the plugin binary directly to avoid the registry DNS/TLS issue
-        # that produces "invalid character '<'" inside the pipeline container.
-        COS_PLUGIN_URL="https://github.com/IBM/ibmcloud-cos-plugin/releases/latest/download/ibmcloud-cli-cos-plugin-linux-amd64"
+        # Download the plugin binary directly from the IBM Cloud CDN to avoid the
+        # plugin registry lookup that fails with "invalid character '<'" in the
+        # pipeline container (the registry endpoint returns an HTML redirect page).
+        COS_PLUGIN_URL="https://plugins.cloud.ibm.com/downloads/bluemix-plugins/cloud-object-storage/1.11.1/cloud-object-storage-linux-amd64-1.11.1"
         curl -fsSL "${COS_PLUGIN_URL}" -o /tmp/ibmcloud-cos-plugin
         chmod +x /tmp/ibmcloud-cos-plugin
         ibmcloud plugin install /tmp/ibmcloud-cos-plugin -f
