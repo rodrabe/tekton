@@ -43,10 +43,17 @@ spec:
       type: string
       description: Base64-encoded SSH private key for packer VPC SSH auth
       default: ""
+  workspaces:
+    - name: pipeline-shared
+      description: Shared PVC workspace passed through both tasks
+
   tasks:
     - name: log-message
       taskRef:
         name: log-message
+      workspaces:
+        - name: shared
+          workspace: pipeline-shared
       params:
         - name: message
           value: $(params.message)
@@ -61,6 +68,9 @@ spec:
       runAfter: [log-message]
       taskRef:
         name: store-to-cos
+      workspaces:
+        - name: shared
+          workspace: pipeline-shared
       params:
         - name: message
           value: $(tasks.log-message.results.message)

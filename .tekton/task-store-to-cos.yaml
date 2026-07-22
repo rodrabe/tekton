@@ -3,6 +3,9 @@ kind: Task
 metadata:
   name: store-to-cos
 spec:
+  workspaces:
+    - name: shared
+      description: Shared workspace containing task 1 output log
   params:
     - name: message
       type: string
@@ -55,21 +58,23 @@ spec:
         #!/usr/bin/env bash
         set -euo pipefail
 
-        MSG="$(params.message)"
-        COUNT="$(params.character-count)"
-        IMAGE="$(params.image-name)"
         TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-        OBJECT_KEY="pipeline-runs/${TIMESTAMP}-summary.json"
+        OBJECT_KEY="pipeline-runs/${TIMESTAMP}-task1-output.log"
 
-        # Build JSON summary
-        PAYLOAD=$(printf '{"timestamp":"%s","message":"%s","character_count":%s,"image_name":"%s"}' \
-          "${TIMESTAMP}" "${MSG}" "${COUNT}" "${IMAGE}")
+        # Use the full task 1 output log captured in the shared workspace
+        LOG_FILE="$(workspaces.shared.path)/task1-output.log"
+        if [[ ! -f "${LOG_FILE}" ]]; then
+          echo "WARNING: task1-output.log not found in shared workspace, falling back to summary"
+          MSG="$(params.message)"
+          COUNT="$(params.character-count)"
+          IMAGE="$(params.image-name)"
+          printf '{"timestamp":"%s","message":"%s","character_count":%s,"image_name":"%s"}' \
+            "${TIMESTAMP}" "${MSG}" "${COUNT}" "${IMAGE}" > "${LOG_FILE}"
+        fi
 
-        echo "==> Summary:"
-        echo "${PAYLOAD}" | tr ',' '\n'
-
-        # Write to a temp file (ibmcloud cos object-put reads from file)
-        printf '%s' "${PAYLOAD}" > /tmp/summary.json
+        echo "==> Payload (task 1 output, $(wc -c < "${LOG_FILE}") bytes):"
+        head -5 "${LOG_FILE}"
+        echo "..."
 
         echo "==> Logging in to IBM Cloud (${STEP_API_ENDPOINT})..."
         ibmcloud login --apikey "${STEP_API_KEY}" -r "${STEP_REGION}" \
@@ -106,7 +111,7 @@ spec:
         ibmcloud cos object-put \
           --bucket "${STEP_BUCKET}" \
           --key    "${OBJECT_KEY}" \
-          --body   /tmp/summary.json \
-          --content-type "application/json"
+          --body   "${LOG_FILE}" \
+          --content-type "text/plain"
 
         echo "==> Stored: s3://${STEP_BUCKET}/${OBJECT_KEY}"

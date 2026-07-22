@@ -93,6 +93,14 @@ spec:
             value: $(tt.params.packer-hcl-b64)
           - name: packer-key-b64
             value: $(tt.params.packer-key-b64)
+        workspaces:
+          - name: pipeline-shared
+            volumeClaimTemplate:
+              spec:
+                accessModes: [ReadWriteOnce]
+                resources:
+                  requests:
+                    storage: 100Mi
 ---
 # The EventListener is the named entry-point that IBM Cloud registers
 # as the "generic webhook" trigger endpoint inside the Tekton pipeline service.

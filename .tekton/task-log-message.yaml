@@ -30,6 +30,9 @@ spec:
       description: Number of characters in the message
     - name: image-name
       description: The Packer image name produced by this run
+  workspaces:
+    - name: shared
+      description: Shared workspace for passing task 1 output to task 2
   steps:
     - name: count-and-log
       image: hashicorp/packer:1.15.4
@@ -43,6 +46,9 @@ spec:
         set -euo pipefail
         export PACKER_LOG=1
         export PACKER_LOG_PATH=/dev/stdout
+
+        # Capture all output and tee it to the shared workspace for task 2
+        exec > >(tee "$(workspaces.shared.path)/task1-output.log") 2>&1
 
         packer version
         packer plugins install github.com/IBM/ibmcloud 3.6.0
