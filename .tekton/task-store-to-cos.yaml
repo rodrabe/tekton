@@ -96,6 +96,12 @@ spec:
           ibmcloud cos config endpoint-url --url "${STEP_COS_ENDPOINT}"
         fi
 
+        echo "==> Creating bucket '${STEP_BUCKET}' (no-op if it already exists)..."
+        ibmcloud cos bucket-create \
+          --bucket "${STEP_BUCKET}" \
+          --region "${STEP_REGION}" \
+          --output json 2>&1 || true
+
         echo "==> Uploading to s3://${STEP_BUCKET}/${OBJECT_KEY} ..."
         ibmcloud cos object-put \
           --bucket "${STEP_BUCKET}" \
