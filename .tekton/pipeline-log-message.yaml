@@ -56,3 +56,15 @@ spec:
           value: $(params.packer-hcl-b64)
         - name: packer-key-b64
           value: $(params.packer-key-b64)
+
+    - name: generate-sbom
+      runAfter: [log-message]
+      taskRef:
+        name: generate-sbom
+      params:
+        - name: image-name
+          value: $(tasks.log-message.results.image-name)
+        - name: message
+          value: $(tasks.log-message.results.message)
+        - name: character-count
+          value: $(tasks.log-message.results.character-count)
