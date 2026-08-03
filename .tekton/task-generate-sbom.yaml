@@ -29,31 +29,32 @@ spec:
         echo "==> Generating SBOM for image: ${IMAGE_NAME}"
         echo "==> Timestamp: ${TIMESTAMP}"
         
-        # Create a minimal SBOM JSON file
-        cat > /tmp/sbom.json <<EOF
-{
-  "bomFormat": "CycloneDX",
-  "specVersion": "1.4",
-  "version": 1,
-  "metadata": {
-    "timestamp": "${TIMESTAMP}",
-    "component": {
-      "type": "application",
-      "name": "${IMAGE_NAME}",
-      "version": "1.0.0"
-    }
-  },
-  "components": [
-    {"type": "library", "name": "curl", "version": "7.81.0"},
-    {"type": "library", "name": "jq", "version": "1.6"},
-    {"type": "library", "name": "ca-certificates", "version": "20230311"},
-    {"type": "application", "name": "ibmcloud-cli", "version": "2.22.0"}
-  ]
-}
-EOF
+        cat > /tmp/sbom.json << 'SBOMEOF'
+        {
+          "bomFormat": "CycloneDX",
+          "specVersion": "1.4",
+          "version": 1,
+          "metadata": {
+            "timestamp": "TIMESTAMP_PLACEHOLDER",
+            "component": {
+              "type": "application",
+              "name": "IMAGE_NAME_PLACEHOLDER",
+              "version": "1.0.0"
+            }
+          },
+          "components": [
+            {"type": "library", "name": "curl", "version": "7.81.0"},
+            {"type": "library", "name": "jq", "version": "1.6"},
+            {"type": "library", "name": "ca-certificates", "version": "20230311"},
+            {"type": "application", "name": "ibmcloud-cli", "version": "2.22.0"}
+          ]
+        }
+        SBOMEOF
+        
+        sed -i "s/TIMESTAMP_PLACEHOLDER/${TIMESTAMP}/g" /tmp/sbom.json
+        sed -i "s/IMAGE_NAME_PLACEHOLDER/${IMAGE_NAME}/g" /tmp/sbom.json
         
         echo "==> SBOM generated:"
         cat /tmp/sbom.json
         
-        # Write result
         printf 'SBOM generated with 4 components for %s' "${IMAGE_NAME}" > "$(results.sbom-summary.path)"
