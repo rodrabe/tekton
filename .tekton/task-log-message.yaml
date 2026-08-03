@@ -47,9 +47,6 @@ spec:
         export PACKER_LOG=1
         export PACKER_LOG_PATH=/dev/stdout
 
-        # Capture all output and tee it to the shared workspace for task 2
-        exec > >(tee "$(workspaces.shared.path)/task1-output.log") 2>&1
-
         packer version
         packer plugins install github.com/IBM/ibmcloud 3.6.0
         packer plugins installed

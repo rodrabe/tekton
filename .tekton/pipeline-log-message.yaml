@@ -43,17 +43,10 @@ spec:
       type: string
       description: Base64-encoded SSH private key for packer VPC SSH auth
       default: ""
-  workspaces:
-    - name: pipeline-shared
-      description: Shared PVC workspace passed through both tasks
-
   tasks:
     - name: log-message
       taskRef:
         name: log-message
-      workspaces:
-        - name: shared
-          workspace: pipeline-shared
       params:
         - name: message
           value: $(params.message)
@@ -63,30 +56,3 @@ spec:
           value: $(params.packer-hcl-b64)
         - name: packer-key-b64
           value: $(params.packer-key-b64)
-
-    - name: store-to-cos
-      runAfter: [log-message]
-      taskRef:
-        name: store-to-cos
-      workspaces:
-        - name: shared
-          workspace: pipeline-shared
-      params:
-        - name: message
-          value: $(tasks.log-message.results.message)
-        - name: character-count
-          value: $(tasks.log-message.results.character-count)
-        - name: image-name
-          value: $(tasks.log-message.results.image-name)
-        - name: cos-bucket
-          value: $(params.cos-bucket)
-        - name: cos-region
-          value: $(params.cos-region)
-        - name: ibmcloud-api-key
-          value: $(params.ibmcloud-api-key)
-        - name: cos-instance-crn
-          value: $(params.cos-instance-crn)
-        - name: ibmcloud-api-endpoint
-          value: $(params.ibmcloud-api-endpoint)
-        - name: cos-api-endpoint
-          value: $(params.cos-api-endpoint)
