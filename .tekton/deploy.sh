@@ -173,10 +173,10 @@ build {
   provisioner "shell" {
     execute_command = "sudo sh -c '{{ .Vars }} {{ .Path }}'"
     inline = [
-      "apt-get update -y",
+      "apt-get update -y -o APT::Update::Post-Invoke-Success:='true' 2>&1 || true",
       "apt-get install -y software-properties-common",
       "add-apt-repository universe -y",
-      "apt-get update -y",
+      "apt-get update -y -o APT::Update::Post-Invoke-Success:='true' 2>&1 || true",
       "apt-get install -y curl jq ca-certificates",
       "curl -fsSL https://clis.cloud.ibm.com/install/linux | bash",
       "ibmcloud plugin install dev -f",
