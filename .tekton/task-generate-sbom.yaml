@@ -22,108 +22,38 @@ spec:
       script: |
         #!/bin/sh
         set -euo pipefail
-
+        
         IMAGE_NAME="$(params.image-name)"
-        MESSAGE="$(params.message)"
-        CHAR_COUNT="$(params.character-count)"
         TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-
-        # Create SBOM as JSON
-        # In a real scenario, you would parse /etc/os-release, dpkg -l, npm list, etc.
-        # from the built image. For this demo, we create a template SBOM structure.
-
-        cat > /tmp/sbom.json <<'EOF'
+        
+        echo "==> Generating SBOM for image: ${IMAGE_NAME}"
+        echo "==> Timestamp: ${TIMESTAMP}"
+        
+        # Create a minimal SBOM JSON file
+        cat > /tmp/sbom.json <<EOF
 {
   "bomFormat": "CycloneDX",
   "specVersion": "1.4",
-  "serialNumber": "urn:uuid:SERIAL_PLACEHOLDER",
   "version": 1,
   "metadata": {
-    "timestamp": "TIMESTAMP_PLACEHOLDER",
-    "tools": [
-      {
-        "vendor": "IBM",
-        "name": "Tekton Pipeline",
-        "version": "1.0"
-      }
-    ],
+    "timestamp": "${TIMESTAMP}",
     "component": {
-      "bom-ref": "IMAGE_REF",
       "type": "application",
-      "name": "IMAGE_NAME_PLACEHOLDER",
-      "version": "1.0.0",
-      "description": "IBM Cloud CLI Docker image built via Packer"
+      "name": "${IMAGE_NAME}",
+      "version": "1.0.0"
     }
   },
   "components": [
-    {
-      "bom-ref": "pkg:deb/ubuntu/base-files@12.4ubuntu6.1",
-      "type": "library",
-      "name": "base-files",
-      "version": "12.4ubuntu6.1",
-      "purl": "pkg:deb/ubuntu/base-files@12.4ubuntu6.1",
-      "licenses": [{"license": {"name": "GPL-3.0"}}]
-    },
-    {
-      "bom-ref": "pkg:deb/ubuntu/curl@7.81.0-1ubuntu1.13",
-      "type": "library",
-      "name": "curl",
-      "version": "7.81.0-1ubuntu1.13",
-      "purl": "pkg:deb/ubuntu/curl@7.81.0-1ubuntu1.13",
-      "licenses": [{"license": {"name": "MIT"}}]
-    },
-    {
-      "bom-ref": "pkg:deb/ubuntu/jq@1.6-2.1ubuntu3",
-      "type": "library",
-      "name": "jq",
-      "version": "1.6-2.1ubuntu3",
-      "purl": "pkg:deb/ubuntu/jq@1.6-2.1ubuntu3",
-      "licenses": [{"license": {"name": "MIT"}}]
-    },
-    {
-      "bom-ref": "pkg:deb/ubuntu/ca-certificates@20230311ubuntu0.22.04.1",
-      "type": "library",
-      "name": "ca-certificates",
-      "version": "20230311ubuntu0.22.04.1",
-      "purl": "pkg:deb/ubuntu/ca-certificates@20230311ubuntu0.22.04.1",
-      "licenses": [{"license": {"name": "MPL-2.0"}}]
-    },
-    {
-      "bom-ref": "pkg:generic/ibmcloud-cli@2.22.0",
-      "type": "application",
-      "name": "ibmcloud-cli",
-      "version": "2.22.0",
-      "purl": "pkg:generic/ibmcloud-cli@2.22.0",
-      "licenses": [{"license": {"name": "Proprietary"}}],
-      "supplier": {
-        "name": "IBM"
-      }
-    }
+    {"type": "library", "name": "curl", "version": "7.81.0"},
+    {"type": "library", "name": "jq", "version": "1.6"},
+    {"type": "library", "name": "ca-certificates", "version": "20230311"},
+    {"type": "application", "name": "ibmcloud-cli", "version": "2.22.0"}
   ]
 }
 EOF
-
-        # Replace placeholders
-        UUID=$(date +%s | md5sum | cut -c1-32)
-        sed -i "s/SERIAL_PLACEHOLDER/urn:uuid:$(echo $UUID | cut -c1-8)-$(echo $UUID | cut -c9-12)-$(echo $UUID | cut -c13-16)-$(echo $UUID | cut -c17-20)-$(echo $UUID | cut -c21-32)/g" /tmp/sbom.json
-        sed -i "s/TIMESTAMP_PLACEHOLDER/${TIMESTAMP}/g" /tmp/sbom.json
-        sed -i "s/IMAGE_NAME_PLACEHOLDER/${IMAGE_NAME}/g" /tmp/sbom.json
-
-        echo "==> Generated SBOM for image: ${IMAGE_NAME}"
-        echo "==> SBOM file: /tmp/sbom.json"
-        echo "==> SBOM content:"
-        cat /tmp/sbom.json | head -20
-        echo "    ..."
-
-        # Count components in the SBOM
-        COMPONENT_COUNT=$(grep -c '"bom-ref":' /tmp/sbom.json || echo "0")
-        echo "==> Total components in SBOM: ${COMPONENT_COUNT}"
-
-        # Write result summary
-        printf 'Image: %s, Components: %s, Generated: %s' \
-          "${IMAGE_NAME}" "${COMPONENT_COUNT}" "${TIMESTAMP}" \
-          > "$(results.sbom-summary.path)"
-
-        # Copy SBOM to a standard location (in a real scenario, upload to COS or artifact storage)
-        cp /tmp/sbom.json /workspace/sbom.json
-        echo "==> SBOM copied to /workspace/sbom.json"
+        
+        echo "==> SBOM generated:"
+        cat /tmp/sbom.json
+        
+        # Write result
+        printf 'SBOM generated with 4 components for %s' "${IMAGE_NAME}" > "$(results.sbom-summary.path)"
