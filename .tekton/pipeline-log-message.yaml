@@ -7,6 +7,7 @@ spec:
     - name: message
       type: string
       description: The string message to log
+      default: ""
     - name: image-name
       type: string
       description: Packer image name (with timestamp) passed from deploy.sh
