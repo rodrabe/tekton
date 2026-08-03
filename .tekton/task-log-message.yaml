@@ -30,9 +30,6 @@ spec:
       description: Number of characters in the message
     - name: image-name
       description: The Packer image name produced by this run
-  workspaces:
-    - name: shared
-      description: Shared workspace for passing task 1 output to task 2
   steps:
     - name: count-and-log
       image: hashicorp/packer:1.15.4
