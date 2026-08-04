@@ -279,112 +279,75 @@ fi
 #       tool integration in the toolchain. This OAuth/PAT authorisation cannot
 #       be done via the REST API — it must be done once in the IBM Cloud Console.
 # ---------------------------------------------------------------------------
-echo "==> Checking pipeline definitions..."
-DEFINITION_RAW=$(curl -sS -X GET \
-  "${PIPELINE_API}/tekton_pipelines/${PIPELINE_ID}/definitions" \
+echo "==> Resolving git tool integration for '${REPO_URL}'..."
+REPO_TOOL_ID=$(curl -sS -X GET \
+  "${TOOLCHAIN_API}/toolchains/${TOOLCHAIN_ID}/tools" \
   -H "Authorization: ${IAM_TOKEN}" \
   -H "Accept: application/json" \
   | jq -r --arg url "${REPO_URL%.git}" \
-    '.definitions[] | select((.source.properties.url // "" | rtrimstr(".git")) == $url) | {id, branch: .source.properties.branch, path: .source.properties.path} | @base64' \
+    '.tools[] | select(
+      (.tool_type_id | test("git|github|gitlab|hostedgit|bitbucket"; "i")) and
+      (
+        ((.parameters.repo_url        // "") | rtrimstr(".git")) == $url or
+        ((.parameters.source_repo_url // "") | rtrimstr(".git")) == $url
+      )
+    ) | .id // empty' \
   | head -1)
 
-# Helper: find (or reuse) the git tool integration ID
-_find_repo_tool_id() {
-  curl -sS -X GET \
-    "${TOOLCHAIN_API}/toolchains/${TOOLCHAIN_ID}/tools" \
-    -H "Authorization: ${IAM_TOKEN}" \
-    -H "Accept: application/json" \
-    | jq -r --arg url "${REPO_URL%.git}" \
-      '.tools[] | select(
-        (.tool_type_id | test("git|github|gitlab|hostedgit|bitbucket"; "i")) and
-        (
-          ((.parameters.repo_url        // "") | rtrimstr(".git")) == $url or
-          ((.parameters.source_repo_url // "") | rtrimstr(".git")) == $url
-        )
-      ) | .id // empty' \
-    | head -1
-}
-
-# Helper: create a new definition and print its id
-_create_definition() {
-  local tool_id="$1"
-  curl -sS -X POST \
-    "${PIPELINE_API}/tekton_pipelines/${PIPELINE_ID}/definitions" \
-    -H "Authorization: ${IAM_TOKEN}" \
-    -H "Content-Type: application/json" \
-    -H "Accept: application/json" \
-    -d "{
-      \"source\": {
-        \"type\": \"git\",
-        \"properties\": {
-          \"url\": \"${REPO_URL}\",
-          \"branch\": \"${REPO_BRANCH}\",
-          \"path\": \"${TEKTON_PATH}\",
-          \"tool\": {\"id\": \"${tool_id}\"}
-        }
-      }
-    }" \
-    | jq -r '.id'
-}
-
-if [[ -z "${DEFINITION_RAW}" ]]; then
-  echo "==> Looking for git tool integration for '${REPO_URL}'..."
-  REPO_TOOL_ID=$(_find_repo_tool_id)
-  if [[ -z "${REPO_TOOL_ID}" ]]; then
-    echo ""
-    echo "=========================================================="
-    echo "  ACTION REQUIRED: Connect the git repository"
-    echo "=========================================================="
-    echo "  The pipeline definition requires the repository to be"
-    echo "  added as a tool integration in the toolchain."
-    echo ""
-    echo "  1. Open the toolchain in the IBM Cloud Console:"
-    echo "     https://test.cloud.ibm.com/devops/toolchains/${TOOLCHAIN_ID}?env_id=ibm:yp:${IBMCLOUD_REGION}"
-    echo ""
-    echo "  2. Click 'Add tool' → select your git provider"
-    echo "     (GitHub, GitHub Enterprise, GitLab, etc.)"
-    echo ""
-    echo "  3. Authorise and link: ${REPO_URL}"
-    echo ""
-    echo "  4. Re-run this script."
-    echo "=========================================================="
-    exit 1
-  fi
-  echo "    Repo tool ID: ${REPO_TOOL_ID}"
-  echo "==> Creating pipeline definition..."
-  DEFINITION_ID=$(_create_definition "${REPO_TOOL_ID}")
-  echo "    Created definition ID: ${DEFINITION_ID}"
-else
-  EXISTING_BRANCH=$(echo "${DEFINITION_RAW}" | base64 -d | jq -r '.branch')
-  EXISTING_PATH=$(echo "${DEFINITION_RAW}"   | base64 -d | jq -r '.path')
-  DEFINITION_ID=$(echo "${DEFINITION_RAW}"   | base64 -d | jq -r '.id')
-
-  if [[ "${EXISTING_BRANCH}" != "${REPO_BRANCH}" || "${EXISTING_PATH}" != "${TEKTON_PATH}" ]]; then
-    echo "==> Definition branch/path mismatch (branch: '${EXISTING_BRANCH}'->'${REPO_BRANCH}', path: '${EXISTING_PATH}'->'${TEKTON_PATH}'). Recreating..."
-    curl -sS -X DELETE \
-      "${PIPELINE_API}/tekton_pipelines/${PIPELINE_ID}/definitions/${DEFINITION_ID}" \
-      -H "Authorization: ${IAM_TOKEN}" > /dev/null
-    REPO_TOOL_ID=$(_find_repo_tool_id)
-    DEFINITION_ID=$(_create_definition "${REPO_TOOL_ID}")
-    echo "    Recreated definition ID: ${DEFINITION_ID}"
-  else
-    echo "    Found existing definition ID: ${DEFINITION_ID} (branch: ${EXISTING_BRANCH}, path: ${EXISTING_PATH})"
-  fi
+if [[ -z "${REPO_TOOL_ID}" ]]; then
+  echo ""
+  echo "=========================================================="
+  echo "  ACTION REQUIRED: Connect the git repository"
+  echo "=========================================================="
+  echo "  The pipeline definition requires the repository to be"
+  echo "  added as a tool integration in the toolchain."
+  echo ""
+  echo "  1. Open the toolchain in the IBM Cloud Console:"
+  echo "     https://test.cloud.ibm.com/devops/toolchains/${TOOLCHAIN_ID}?env_id=ibm:yp:${IBMCLOUD_REGION}"
+  echo ""
+  echo "  2. Click 'Add tool' → select your git provider"
+  echo "     (GitHub, GitHub Enterprise, GitLab, etc.)"
+  echo ""
+  echo "  3. Authorise and link: ${REPO_URL}"
+  echo ""
+  echo "  4. Re-run this script."
+  echo "=========================================================="
+  exit 1
 fi
+echo "    Repo tool ID: ${REPO_TOOL_ID}"
 
-# ---------------------------------------------------------------------------
-# 5b. Sync the pipeline definition so IBM Cloud re-reads the YAML from git
-#     before we validate the event_listener name in step 6.
-# ---------------------------------------------------------------------------
-echo "==> Syncing pipeline definition from git..."
-SYNC_STATUS=$(curl -sS -o /dev/null -w "%{http_code}" -X POST \
-  "${PIPELINE_API}/tekton_pipelines/${PIPELINE_ID}/sync" \
+echo "==> Deleting existing pipeline definitions (forces IBM Cloud to re-read YAML from git)..."
+EXISTING_DEFINITION_IDS=$(curl -sS -X GET \
+  "${PIPELINE_API}/tekton_pipelines/${PIPELINE_ID}/definitions" \
+  -H "Authorization: ${IAM_TOKEN}" \
+  -H "Accept: application/json" \
+  | jq -r '.definitions[].id // empty')
+for def_id in ${EXISTING_DEFINITION_IDS}; do
+  curl -sS -X DELETE \
+    "${PIPELINE_API}/tekton_pipelines/${PIPELINE_ID}/definitions/${def_id}" \
+    -H "Authorization: ${IAM_TOKEN}" > /dev/null
+  echo "    Deleted definition: ${def_id}"
+done
+
+echo "==> Creating pipeline definition (branch: ${REPO_BRANCH}, path: ${TEKTON_PATH})..."
+DEFINITION_ID=$(curl -sS -X POST \
+  "${PIPELINE_API}/tekton_pipelines/${PIPELINE_ID}/definitions" \
   -H "Authorization: ${IAM_TOKEN}" \
   -H "Content-Type: application/json" \
-  -H "Accept: application/json")
-echo "    Sync HTTP status: ${SYNC_STATUS}"
-# Give IBM Cloud a moment to process the sync before querying triggers
-sleep 5
+  -H "Accept: application/json" \
+  -d "{
+    \"source\": {
+      \"type\": \"git\",
+      \"properties\": {
+        \"url\": \"${REPO_URL}\",
+        \"branch\": \"${REPO_BRANCH}\",
+        \"path\": \"${TEKTON_PATH}\",
+        \"tool\": {\"id\": \"${REPO_TOOL_ID}\"}
+      }
+    }
+  }" \
+  | jq -r '.id')
+echo "    Definition ID: ${DEFINITION_ID}"
 
 # ---------------------------------------------------------------------------
 # 6. Find or create the generic webhook trigger
