@@ -280,19 +280,17 @@ fi
 #       be done via the REST API — it must be done once in the IBM Cloud Console.
 # ---------------------------------------------------------------------------
 echo "==> Checking pipeline definitions..."
-DEFINITION_ID=$(curl -sS -X GET \
+DEFINITION_RAW=$(curl -sS -X GET \
   "${PIPELINE_API}/tekton_pipelines/${PIPELINE_ID}/definitions" \
   -H "Authorization: ${IAM_TOKEN}" \
   -H "Accept: application/json" \
   | jq -r --arg url "${REPO_URL%.git}" \
-    '.definitions[] | select((.source.properties.url // "" | rtrimstr(".git")) == $url) | .id // empty' \
+    '.definitions[] | select((.source.properties.url // "" | rtrimstr(".git")) == $url) | {id, branch: .source.properties.branch, path: .source.properties.path} | @base64' \
   | head -1)
 
-if [[ -z "${DEFINITION_ID}" ]]; then
-  # Find the repo tool integration ID in the toolchain
-  echo "==> Looking for git tool integration for '${REPO_URL}'..."
-  # Normalise both sides: strip trailing .git before comparing
-  REPO_TOOL_ID=$(curl -sS -X GET \
+# Helper: find (or reuse) the git tool integration ID
+_find_repo_tool_id() {
+  curl -sS -X GET \
     "${TOOLCHAIN_API}/toolchains/${TOOLCHAIN_ID}/tools" \
     -H "Authorization: ${IAM_TOKEN}" \
     -H "Accept: application/json" \
@@ -304,8 +302,34 @@ if [[ -z "${DEFINITION_ID}" ]]; then
           ((.parameters.source_repo_url // "") | rtrimstr(".git")) == $url
         )
       ) | .id // empty' \
-    | head -1)
+    | head -1
+}
 
+# Helper: create a new definition and print its id
+_create_definition() {
+  local tool_id="$1"
+  curl -sS -X POST \
+    "${PIPELINE_API}/tekton_pipelines/${PIPELINE_ID}/definitions" \
+    -H "Authorization: ${IAM_TOKEN}" \
+    -H "Content-Type: application/json" \
+    -H "Accept: application/json" \
+    -d "{
+      \"source\": {
+        \"type\": \"git\",
+        \"properties\": {
+          \"url\": \"${REPO_URL}\",
+          \"branch\": \"${REPO_BRANCH}\",
+          \"path\": \"${TEKTON_PATH}\",
+          \"tool\": {\"id\": \"${tool_id}\"}
+        }
+      }
+    }" \
+    | jq -r '.id'
+}
+
+if [[ -z "${DEFINITION_RAW}" ]]; then
+  echo "==> Looking for git tool integration for '${REPO_URL}'..."
+  REPO_TOOL_ID=$(_find_repo_tool_id)
   if [[ -z "${REPO_TOOL_ID}" ]]; then
     echo ""
     echo "=========================================================="
@@ -327,28 +351,25 @@ if [[ -z "${DEFINITION_ID}" ]]; then
     exit 1
   fi
   echo "    Repo tool ID: ${REPO_TOOL_ID}"
-
   echo "==> Creating pipeline definition..."
-  DEFINITION_ID=$(curl -sS -X POST \
-    "${PIPELINE_API}/tekton_pipelines/${PIPELINE_ID}/definitions" \
-    -H "Authorization: ${IAM_TOKEN}" \
-    -H "Content-Type: application/json" \
-    -H "Accept: application/json" \
-    -d "{
-      \"source\": {
-        \"type\": \"git\",
-        \"properties\": {
-          \"url\": \"${REPO_URL}\",
-          \"branch\": \"${REPO_BRANCH}\",
-          \"path\": \"${TEKTON_PATH}\",
-          \"tool\": {\"id\": \"${REPO_TOOL_ID}\"}
-        }
-      }
-    }" \
-    | jq -r '.id')
+  DEFINITION_ID=$(_create_definition "${REPO_TOOL_ID}")
   echo "    Created definition ID: ${DEFINITION_ID}"
 else
-  echo "    Found existing definition ID: ${DEFINITION_ID}"
+  EXISTING_BRANCH=$(echo "${DEFINITION_RAW}" | base64 -d | jq -r '.branch')
+  EXISTING_PATH=$(echo "${DEFINITION_RAW}"   | base64 -d | jq -r '.path')
+  DEFINITION_ID=$(echo "${DEFINITION_RAW}"   | base64 -d | jq -r '.id')
+
+  if [[ "${EXISTING_BRANCH}" != "${REPO_BRANCH}" || "${EXISTING_PATH}" != "${TEKTON_PATH}" ]]; then
+    echo "==> Definition branch/path mismatch (branch: '${EXISTING_BRANCH}'->'${REPO_BRANCH}', path: '${EXISTING_PATH}'->'${TEKTON_PATH}'). Recreating..."
+    curl -sS -X DELETE \
+      "${PIPELINE_API}/tekton_pipelines/${PIPELINE_ID}/definitions/${DEFINITION_ID}" \
+      -H "Authorization: ${IAM_TOKEN}" > /dev/null
+    REPO_TOOL_ID=$(_find_repo_tool_id)
+    DEFINITION_ID=$(_create_definition "${REPO_TOOL_ID}")
+    echo "    Recreated definition ID: ${DEFINITION_ID}"
+  else
+    echo "    Found existing definition ID: ${DEFINITION_ID} (branch: ${EXISTING_BRANCH}, path: ${EXISTING_PATH})"
+  fi
 fi
 
 # ---------------------------------------------------------------------------
