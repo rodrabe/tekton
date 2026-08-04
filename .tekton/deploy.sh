@@ -46,8 +46,8 @@ set -euo pipefail
 : "${RESOURCE_GROUP:?Must set RESOURCE_GROUP}"
 : "${REPO_URL:?Must set REPO_URL}"
 
-TOOLCHAIN_NAME="${TOOLCHAIN_NAME:-log-message-toolchain}"
-PIPELINE_NAME="${PIPELINE_NAME:-log-message-pipeline}"
+TOOLCHAIN_NAME="${TOOLCHAIN_NAME:-pipeline-image-builder-toolchain}"
+PIPELINE_NAME="${PIPELINE_NAME:-pipeline-image-builder}"
 WEBHOOK_SECRET="${WEBHOOK_SECRET:-changeme}"
 REPO_BRANCH="${REPO_BRANCH:-main}"
 TEKTON_PATH="${TEKTON_PATH:-.tekton}"
@@ -354,17 +354,19 @@ fi
 # ---------------------------------------------------------------------------
 # 6. Find or create the generic webhook trigger
 # ---------------------------------------------------------------------------
+DESIRED_LISTENER="pipeline-image-builder-listener"
+
 echo "==> Looking for existing trigger 'webhook-trigger'..."
-TRIGGER=$(curl -sS -X GET \
+TRIGGER_RAW=$(curl -sS -X GET \
   "${PIPELINE_API}/tekton_pipelines/${PIPELINE_ID}/triggers" \
   -H "Authorization: ${IAM_TOKEN}" \
   -H "Accept: application/json" \
-  | jq -r '.triggers[] | select(.name == "webhook-trigger") | {id, webhook_url} | @base64' \
+  | jq -r '.triggers[] | select(.name == "webhook-trigger") | {id, webhook_url, event_listener} | @base64' \
   | head -1)
 
-if [[ -z "${TRIGGER}" ]]; then
+if [[ -z "${TRIGGER_RAW}" ]]; then
   echo "==> Creating generic webhook trigger..."
-  TRIGGER=$(curl -sS -X POST \
+  TRIGGER_RAW=$(curl -sS -X POST \
     "${PIPELINE_API}/tekton_pipelines/${PIPELINE_ID}/triggers" \
     -H "Authorization: ${IAM_TOKEN}" \
     -H "Content-Type: application/json" \
@@ -372,7 +374,7 @@ if [[ -z "${TRIGGER}" ]]; then
     -d "{
       \"type\": \"generic\",
       \"name\": \"webhook-trigger\",
-      \"event_listener\": \"log-message-listener\",
+      \"event_listener\": \"${DESIRED_LISTENER}\",
       \"enabled\": true,
       \"secret\": {
         \"type\": \"token_matches\",
@@ -382,13 +384,29 @@ if [[ -z "${TRIGGER}" ]]; then
         \"value\": \"${WEBHOOK_SECRET}\"
       }
     }" \
-    | jq -r '{id, webhook_url} | @base64')
+    | jq -r '{id, webhook_url, event_listener} | @base64')
   echo "    Created trigger."
 else
-  echo "    Found existing trigger."
+  EXISTING_LISTENER=$(echo "${TRIGGER_RAW}" | base64 -d | jq -r '.event_listener')
+  if [[ "${EXISTING_LISTENER}" != "${DESIRED_LISTENER}" ]]; then
+    echo "==> Updating trigger event_listener: '${EXISTING_LISTENER}' -> '${DESIRED_LISTENER}'..."
+    EXISTING_ID=$(echo "${TRIGGER_RAW}" | base64 -d | jq -r '.id')
+    TRIGGER_RAW=$(curl -sS -X PATCH \
+      "${PIPELINE_API}/tekton_pipelines/${PIPELINE_ID}/triggers/${EXISTING_ID}" \
+      -H "Authorization: ${IAM_TOKEN}" \
+      -H "Content-Type: application/json" \
+      -H "Accept: application/json" \
+      -d "{\"event_listener\": \"${DESIRED_LISTENER}\"}" \
+      | jq -r '{id, webhook_url, event_listener} | @base64')
+    echo "    Trigger updated."
+  else
+    echo "    Found existing trigger (event_listener already correct)."
+  fi
 fi
 
-TRIGGER_ID=$(echo "${TRIGGER}"  | base64 -d | jq -r '.id')
+TRIGGER="${TRIGGER_RAW}"
+
+TRIGGER_ID=$(echo "${TRIGGER}" | base64 -d | jq -r '.id')
 WEBHOOK_URL=$(echo "${TRIGGER}" | base64 -d | jq -r '.webhook_url')
 echo "    Trigger ID:  ${TRIGGER_ID}"
 echo "    Webhook URL: ${WEBHOOK_URL}"

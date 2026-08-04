@@ -1,7 +1,7 @@
 apiVersion: tekton.dev/v1beta1
 kind: Pipeline
 metadata:
-  name: log-message-pipeline
+  name: pipeline-image-builder
 spec:
   params:
     - name: message
@@ -45,9 +45,9 @@ spec:
       description: Base64-encoded SSH private key for packer VPC SSH auth
       default: ""
   tasks:
-    - name: log-message
+    - name: build-image
       taskRef:
-        name: log-message
+        name: build-image
       params:
         - name: message
           value: $(params.message)
@@ -59,13 +59,13 @@ spec:
           value: $(params.packer-key-b64)
 
     - name: generate-sbom
-      runAfter: [log-message]
+      runAfter: [build-image]
       taskRef:
         name: generate-sbom
       params:
         - name: image-name
-          value: $(tasks.log-message.results.image-name)
+          value: $(tasks.build-image.results.image-name)
         - name: message
-          value: $(tasks.log-message.results.message)
+          value: $(tasks.build-image.results.message)
         - name: character-count
-          value: $(tasks.log-message.results.character-count)
+          value: $(tasks.build-image.results.character-count)

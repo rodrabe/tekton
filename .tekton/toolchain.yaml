@@ -2,9 +2,9 @@
 # https://cloud.ibm.com/docs/ContinuousDelivery?topic=ContinuousDelivery-toolchains_about
 version: "2"
 template:
-  name: log-message-toolchain
+  name: pipeline-image-builder-toolchain
   description: >
-    A Tekton pipeline that logs a string parameter delivered via a webhook trigger.
+    A Tekton pipeline that builds a VPC custom image using Packer.
 
 services:
   # --- Source repo -------------------------------------------------------
@@ -19,7 +19,7 @@ services:
     service_id: pipeline
     parameters:
       type: tekton
-      name: log-message-pipeline
+      name: pipeline-image-builder
       ui_pipeline: true
       configuration:
         content:

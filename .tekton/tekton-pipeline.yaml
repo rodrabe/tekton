@@ -4,7 +4,7 @@
 apiVersion: tekton.dev/v1beta1
 kind: TriggerBinding
 metadata:
-  name: log-message-binding
+  name: pipeline-image-builder-binding
 spec:
   params:
     - name: message
@@ -31,7 +31,7 @@ spec:
 apiVersion: tekton.dev/v1beta1
 kind: TriggerTemplate
 metadata:
-  name: log-message-template
+  name: pipeline-image-builder-template
 spec:
   params:
     - name: message
@@ -68,10 +68,10 @@ spec:
     - apiVersion: tekton.dev/v1beta1
       kind: PipelineRun
       metadata:
-        generateName: log-message-run-
+        generateName: pipeline-image-builder-run-
       spec:
         pipelineRef:
-          name: log-message-pipeline
+          name: pipeline-image-builder
         params:
           - name: message
             value: $(tt.params.message)
@@ -99,11 +99,11 @@ spec:
 apiVersion: tekton.dev/v1beta1
 kind: EventListener
 metadata:
-  name: log-message-listener
+  name: pipeline-image-builder-listener
 spec:
   triggers:
     - name: webhook-trigger
       bindings:
-        - ref: log-message-binding
+        - ref: pipeline-image-builder-binding
       template:
-        ref: log-message-template
+        ref: pipeline-image-builder-template
