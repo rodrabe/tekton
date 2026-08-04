@@ -373,6 +373,20 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# 5b. Sync the pipeline definition so IBM Cloud re-reads the YAML from git
+#     before we validate the event_listener name in step 6.
+# ---------------------------------------------------------------------------
+echo "==> Syncing pipeline definition from git..."
+SYNC_STATUS=$(curl -sS -o /dev/null -w "%{http_code}" -X POST \
+  "${PIPELINE_API}/tekton_pipelines/${PIPELINE_ID}/sync" \
+  -H "Authorization: ${IAM_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json")
+echo "    Sync HTTP status: ${SYNC_STATUS}"
+# Give IBM Cloud a moment to process the sync before querying triggers
+sleep 5
+
+# ---------------------------------------------------------------------------
 # 6. Find or create the generic webhook trigger
 # ---------------------------------------------------------------------------
 DESIRED_LISTENER="pipeline-image-builder-listener"
