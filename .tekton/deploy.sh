@@ -181,6 +181,24 @@ build {
       "curl -fsSL https://clis.cloud.ibm.com/install/linux | bash",
       "ibmcloud plugin install dev -f",
       "ibmcloud version",
+      "curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin",
+      "syft / -o cyclonedx-json=/tmp/sbom.json",
+      "chmod 644 /tmp/sbom.json",
+    ]
+  }
+
+  # Copy the SBOM out of the VM to the Packer host workspace
+  provisioner "file" {
+    source      = "/tmp/sbom.json"
+    destination = "/workspace/sbom.json"
+    direction   = "download"
+  }
+
+  # Clean up syft binary and SBOM from the VM image after capture
+  provisioner "shell" {
+    execute_command = "sudo sh -c '{{ .Vars }} {{ .Path }}'"
+    inline = [
+      "rm -f /usr/local/bin/syft /tmp/sbom.json",
     ]
   }
 }

@@ -63,6 +63,13 @@ spec:
 
         packer build /workspace/ibmcloud.pkr.hcl
 
+        echo "==> SBOM (CycloneDX JSON):"
+        if [[ -f /workspace/sbom.json ]]; then
+          cat /workspace/sbom.json
+        else
+          echo "WARNING: /workspace/sbom.json not found — syft may not have run or file provisioner failed"
+        fi
+
         MSG="$(params.message)"
         COUNT=$(printf '%s' "${MSG}" | wc -m | tr -d ' ')
         echo "Message: ${MSG}"
