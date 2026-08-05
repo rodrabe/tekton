@@ -187,10 +187,10 @@ build {
     ]
   }
 
-  # Copy the SBOM out of the VM to the Packer host workspace
+  # Copy the SBOM out of the VM to the shared Tekton workspace
   provisioner "file" {
     source      = "/tmp/sbom.json"
-    destination = "/workspace/sbom.json"
+    destination = "/workspace/shared/sbom.json"
     direction   = "download"
   }
 

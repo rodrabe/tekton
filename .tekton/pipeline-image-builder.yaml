@@ -14,7 +14,7 @@ spec:
       default: ""
     - name: cos-bucket
       type: string
-      description: COS bucket to store the run summary
+      description: COS bucket to store the SBOM
       default: ""
     - name: cos-region
       type: string
@@ -44,10 +44,16 @@ spec:
       type: string
       description: Base64-encoded SSH private key for packer VPC SSH auth
       default: ""
+  workspaces:
+    - name: shared
+      description: Shared workspace for passing sbom.json between tasks
   tasks:
     - name: build-image
       taskRef:
         name: build-image
+      workspaces:
+        - name: shared
+          workspace: shared
       params:
         - name: message
           value: $(params.message)
@@ -58,14 +64,25 @@ spec:
         - name: packer-key-b64
           value: $(params.packer-key-b64)
 
-    - name: generate-sbom
+    - name: store-sbom-to-cos
       runAfter: [build-image]
       taskRef:
-        name: generate-sbom
+        name: store-sbom-to-cos
+      workspaces:
+        - name: shared
+          workspace: shared
       params:
         - name: image-name
           value: $(tasks.build-image.results.image-name)
-        - name: message
-          value: $(tasks.build-image.results.message)
-        - name: character-count
-          value: $(tasks.build-image.results.character-count)
+        - name: cos-bucket
+          value: $(params.cos-bucket)
+        - name: cos-region
+          value: $(params.cos-region)
+        - name: ibmcloud-api-key
+          value: $(params.ibmcloud-api-key)
+        - name: cos-instance-crn
+          value: $(params.cos-instance-crn)
+        - name: ibmcloud-api-endpoint
+          value: $(params.ibmcloud-api-endpoint)
+        - name: cos-api-endpoint
+          value: $(params.cos-api-endpoint)

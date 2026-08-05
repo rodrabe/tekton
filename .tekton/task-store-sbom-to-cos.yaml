@@ -1,24 +1,18 @@
 apiVersion: tekton.dev/v1beta1
 kind: Task
 metadata:
-  name: store-to-cos
+  name: store-sbom-to-cos
 spec:
   workspaces:
     - name: shared
-      description: Shared workspace containing task 1 output log
+      description: Shared workspace containing sbom.json written by the build-image task
   params:
-    - name: message
-      type: string
-      description: The original message string from task 1
-    - name: character-count
-      type: string
-      description: Character count from task 1
     - name: image-name
       type: string
-      description: Packer image name from task 1
+      description: Packer image name from the build-image task
     - name: cos-bucket
       type: string
-      description: COS bucket name to write the summary file to
+      description: COS bucket name to write sbom.json to
     - name: cos-region
       type: string
       description: COS region (e.g. us-south)
@@ -54,48 +48,36 @@ spec:
           value: $(params.cos-api-endpoint)
         - name: STEP_COS_CRN
           value: $(params.cos-instance-crn)
+        - name: STEP_IMAGE_NAME
+          value: $(params.image-name)
       script: |
         #!/usr/bin/env bash
         set -euo pipefail
 
-        TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-        OBJECT_KEY="pipeline-runs/${TIMESTAMP}-task1-output.log"
-
-        # Use the full task 1 output log captured in the shared workspace
-        LOG_FILE="$(workspaces.shared.path)/task1-output.log"
-        if [[ ! -f "${LOG_FILE}" ]]; then
-          echo "WARNING: task1-output.log not found in shared workspace, falling back to summary"
-          MSG="$(params.message)"
-          COUNT="$(params.character-count)"
-          IMAGE="$(params.image-name)"
-          printf '{"timestamp":"%s","message":"%s","character_count":%s,"image_name":"%s"}' \
-            "${TIMESTAMP}" "${MSG}" "${COUNT}" "${IMAGE}" > "${LOG_FILE}"
+        SBOM_FILE="$(workspaces.shared.path)/sbom.json"
+        if [[ ! -f "${SBOM_FILE}" ]]; then
+          echo "ERROR: sbom.json not found at ${SBOM_FILE}"
+          exit 1
         fi
 
-        echo "==> Payload (task 1 output, $(wc -c < "${LOG_FILE}") bytes):"
-        head -5 "${LOG_FILE}"
-        echo "..."
+        OBJECT_KEY="sbom/${STEP_IMAGE_NAME}/sbom.json"
+        echo "==> Uploading SBOM ($(wc -c < "${SBOM_FILE}") bytes) to s3://${STEP_BUCKET}/${OBJECT_KEY}"
 
         echo "==> Logging in to IBM Cloud (${STEP_API_ENDPOINT})..."
         ibmcloud login --apikey "${STEP_API_KEY}" -r "${STEP_REGION}" \
           -a "${STEP_API_ENDPOINT}" -q
 
         echo "==> Installing COS plugin..."
-        # Download the plugin binary directly from the IBM Cloud CDN to avoid the
-        # plugin registry lookup that fails with "invalid character '<'" in the
-        # pipeline container (the registry endpoint returns an HTML redirect page).
         COS_PLUGIN_URL="https://plugins.cloud.ibm.com/downloads/bluemix-plugins/cloud-object-storage/1.11.1/cloud-object-storage-linux-amd64-1.11.1"
         curl -fsSL "${COS_PLUGIN_URL}" -o /tmp/ibmcloud-cos-plugin
         chmod +x /tmp/ibmcloud-cos-plugin
         ibmcloud plugin install /tmp/ibmcloud-cos-plugin -f
 
-        # Configure COS instance CRN so the plugin knows which instance to use
         if [[ -n "${STEP_COS_CRN}" ]]; then
           echo "==> Configuring COS instance CRN..."
           ibmcloud cos config crn --crn "${STEP_COS_CRN}"
         fi
 
-        # Point the COS plugin at the correct service endpoint when using staging
         if [[ -n "${STEP_COS_ENDPOINT}" ]]; then
           echo "==> Configuring COS endpoint: ${STEP_COS_ENDPOINT}"
           ibmcloud cos config endpoint-url --url "${STEP_COS_ENDPOINT}"
@@ -107,11 +89,10 @@ spec:
           --region "${STEP_REGION}" \
           --output json 2>&1 || true
 
-        echo "==> Uploading to s3://${STEP_BUCKET}/${OBJECT_KEY} ..."
         ibmcloud cos object-put \
           --bucket "${STEP_BUCKET}" \
           --key    "${OBJECT_KEY}" \
-          --body   "${LOG_FILE}" \
-          --content-type "text/plain"
+          --body   "${SBOM_FILE}" \
+          --content-type "application/json"
 
         echo "==> Stored: s3://${STEP_BUCKET}/${OBJECT_KEY}"

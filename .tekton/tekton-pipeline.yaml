@@ -72,6 +72,14 @@ spec:
       spec:
         pipelineRef:
           name: pipeline-image-builder
+        workspaces:
+          - name: shared
+            volumeClaimTemplate:
+              spec:
+                accessModes: [ReadWriteOnce]
+                resources:
+                  requests:
+                    storage: 100Mi
         params:
           - name: message
             value: $(tt.params.message)

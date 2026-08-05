@@ -3,6 +3,9 @@ kind: Task
 metadata:
   name: build-image
 spec:
+  workspaces:
+    - name: shared
+      description: Shared workspace for writing sbom.json (consumed by store-sbom-to-cos)
   params:
     - name: message
       type: string
@@ -50,24 +53,24 @@ spec:
 
         # Decode SSH private key
         echo "==> Writing SSH private key..."
-        printf '%s' "${STEP_PKR_KEY_B64}" | base64 -d > /workspace/packer_id_rsa
-        chmod 600 /workspace/packer_id_rsa
+        printf '%s' "${STEP_PKR_KEY_B64}" | base64 -d > "$(workspaces.shared.path)/packer_id_rsa"
+        chmod 600 "$(workspaces.shared.path)/packer_id_rsa"
 
         # Decode and write the generated HCL file
         echo "==> Writing ibmcloud.pkr.hcl..."
-        printf '%s' "${STEP_PKR_HCL_B64}" | base64 -d > /workspace/ibmcloud.pkr.hcl
+        printf '%s' "${STEP_PKR_HCL_B64}" | base64 -d > "$(workspaces.shared.path)/ibmcloud.pkr.hcl"
         echo "--- ibmcloud.pkr.hcl ---"
-        cat /workspace/ibmcloud.pkr.hcl
+        cat "$(workspaces.shared.path)/ibmcloud.pkr.hcl"
         echo "------------------------"
-        packer validate /workspace/ibmcloud.pkr.hcl
+        packer validate "$(workspaces.shared.path)/ibmcloud.pkr.hcl"
 
-        packer build /workspace/ibmcloud.pkr.hcl
+        packer build "$(workspaces.shared.path)/ibmcloud.pkr.hcl"
 
         echo "==> SBOM (CycloneDX JSON):"
-        if [[ -f /workspace/sbom.json ]]; then
-          cat /workspace/sbom.json
+        if [[ -f "$(workspaces.shared.path)/sbom.json" ]]; then
+          cat "$(workspaces.shared.path)/sbom.json"
         else
-          echo "WARNING: /workspace/sbom.json not found — syft may not have run or file provisioner failed"
+          echo "WARNING: sbom.json not found in shared workspace — syft may not have run or file provisioner failed"
         fi
 
         MSG="$(params.message)"
