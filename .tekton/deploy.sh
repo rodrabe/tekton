@@ -57,6 +57,16 @@ PKR_REGISTRY="${PKR_REGISTRY:-}"
 # Override PKR_IMAGE_NAME to use a fixed name (e.g. for idempotent rebuilds).
 PKR_TIMESTAMP="$(date -u +%Y%m%d%H%M%S)"
 PKR_IMAGE_NAME="${PKR_IMAGE_NAME:-ibmcloud-cli}-${PKR_TIMESTAMP}"
+
+# Generate a throwaway ed25519 SSH key pair for this packer run.
+# The public key is injected into the HCL template; the private key is
+# base64-encoded and sent to the pipeline so packer can SSH into the VSI.
+PKR_SSH_KEY_DIR=$(mktemp -d)
+ssh-keygen -t ed25519 -N "" -f "${PKR_SSH_KEY_DIR}/packer_id_rsa" -C "packer-build-${PKR_TIMESTAMP}" -q
+PKR_KEY_B64=$(base64 < "${PKR_SSH_KEY_DIR}/packer_id_rsa" | tr -d '\n')
+PKR_PUB_KEY=$(cat "${PKR_SSH_KEY_DIR}/packer_id_rsa.pub")
+rm -rf "${PKR_SSH_KEY_DIR}"
+echo "    SSH key pair generated for this build."
 # Use the image name as the COS bucket name (override with COS_BUCKET if needed).
 COS_BUCKET="${COS_BUCKET:-${PKR_IMAGE_NAME}}"
 PKR_IMAGE_TAG="${PKR_IMAGE_TAG:-latest}"
@@ -447,6 +457,7 @@ WEBHOOK_BODY=$(jq -n \
   --arg ibmcloud_api_endpoint "${IBMCLOUD_API_ENDPOINT}" \
   --arg cos_api_endpoint     "${COS_API_ENDPOINT}" \
   --arg hcl                  "${PKR_HCL_B64}" \
+  --arg key                  "${PKR_KEY_B64}" \
   '{
     "message":               $message,
     "image_name":            $image_name,
@@ -456,7 +467,8 @@ WEBHOOK_BODY=$(jq -n \
     "cos_instance_crn":      $cos_instance_crn,
     "ibmcloud_api_endpoint": $ibmcloud_api_endpoint,
     "cos_api_endpoint":      $cos_api_endpoint,
-    "packer_hcl_b64":        $hcl
+    "packer_hcl_b64":        $hcl,
+    "packer_key_b64":        $key
   }')
 RESPONSE=$(curl -sS -w "\n%{http_code}" -X POST "${WEBHOOK_URL}" \
   -H "Content-Type: application/json" \
