@@ -405,7 +405,7 @@ if [[ -z "${TRIGGER_RAW}" ]]; then
         \"type\": \"token_matches\",
         \"source\": \"header\",
         \"key_name\": \"X-Webhook-Token\",
-        \"algorithm\": \"plain\",
+        \"algorithm\": \"sha256\",
         \"value\": \"${WEBHOOK_SECRET}\"
       }
     }" \
@@ -467,9 +467,11 @@ WEBHOOK_BODY=$(jq -n \
     "packer_hcl_b64":        $hcl,
     "packer_key_b64":        $key
   }')
+# Compute HMAC-SHA256 of the body so the raw secret is never sent over the wire
+WEBHOOK_HMAC=$(printf '%s' "${WEBHOOK_BODY}" | openssl dgst -sha256 -hmac "${WEBHOOK_SECRET}" | awk '{print $2}')
 RESPONSE=$(curl -sS -w "\n%{http_code}" -X POST "${WEBHOOK_URL}" \
   -H "Content-Type: application/json" \
-  -H "X-Webhook-Token: ${WEBHOOK_SECRET}" \
+  -H "X-Webhook-Token: ${WEBHOOK_HMAC}" \
   -d "${WEBHOOK_BODY}")
 HTTP_STATUS=$(echo "${RESPONSE}" | tail -1)
 RESP_BODY=$(echo "${RESPONSE}" | head -1)
