@@ -15,8 +15,6 @@ spec:
       value: $(body.cos_bucket)
     - name: cos-region
       value: $(body.cos_region)
-    - name: ibmcloud-api-key
-      value: $(body.ibmcloud_api_key)
     - name: cos-instance-crn
       value: $(body.cos_instance_crn)
     - name: ibmcloud-api-endpoint
@@ -46,8 +44,12 @@ spec:
     - name: cos-region
       description: COS region
       default: "us-south"
+    # ibmcloud-api-key is NOT sourced from the webhook body.
+    # Set it as a secure "Text" environment property named ibmcloud-api-key
+    # on the Tekton pipeline in the IBM Cloud Console so it is never
+    # transmitted in the webhook payload.
     - name: ibmcloud-api-key
-      description: IBM Cloud API key for COS upload
+      description: IBM Cloud API key — set as a secure pipeline environment property, not via webhook
       default: ""
     - name: cos-instance-crn
       description: CRN of the COS service instance
@@ -90,7 +92,7 @@ spec:
           - name: cos-region
             value: $(tt.params.cos-region)
           - name: ibmcloud-api-key
-            value: $(tt.params.ibmcloud-api-key)
+            value: $(tt.params.ibmcloud-api-key)  # resolved from secure pipeline env property
           - name: cos-instance-crn
             value: $(tt.params.cos-instance-crn)
           - name: ibmcloud-api-endpoint

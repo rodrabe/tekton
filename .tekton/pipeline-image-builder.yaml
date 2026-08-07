@@ -63,6 +63,8 @@ spec:
           value: $(params.packer-hcl-b64)
         - name: packer-key-b64
           value: $(params.packer-key-b64)
+        - name: ibmcloud-api-key
+          value: $(params.ibmcloud-api-key)
 
     - name: store-sbom-to-cos
       runAfter: [build-image]

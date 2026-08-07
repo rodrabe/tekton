@@ -26,6 +26,10 @@ spec:
       type: string
       description: Base64-encoded SSH private key for packer VPC SSH auth
       default: ""
+    - name: ibmcloud-api-key
+      type: string
+      description: IBM Cloud API key injected into packer as PKR_VAR_ibmcloud_api_key (never written to HCL)
+      default: ""
   results:
     - name: message
       description: The original message string
@@ -41,6 +45,8 @@ spec:
           value: $(params.packer-hcl-b64)
         - name: STEP_PKR_KEY_B64
           value: $(params.packer-key-b64)
+        - name: PKR_VAR_ibmcloud_api_key
+          value: $(params.ibmcloud-api-key)
       script: |
         #!/usr/bin/env bash
         set -euo pipefail
