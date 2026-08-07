@@ -427,7 +427,7 @@ TRIGGER_RAW=$(curl -sS -X POST \
       \"type\": \"token_matches\",
       \"source\": \"header\",
       \"key_name\": \"X-Webhook-Token\",
-      \"algorithm\": \"sha256\",
+      \"algorithm\": \"plain\",
       \"value\": \"${WEBHOOK_SECRET}\"
     }
   }" \
@@ -472,11 +472,9 @@ WEBHOOK_BODY=$(jq -n \
     "packer_hcl_b64":        $hcl,
     "packer_key_b64":        $key
   }')
-# IBM Cloud sha256 algorithm: hash the secret itself, send the digest as the token
-WEBHOOK_TOKEN=$(printf '%s' "${WEBHOOK_SECRET}" | openssl dgst -sha256 | awk '{print $2}')
 RESPONSE=$(curl -sS -w "\n%{http_code}" -X POST "${WEBHOOK_URL}" \
   -H "Content-Type: application/json" \
-  -H "X-Webhook-Token: ${WEBHOOK_TOKEN}" \
+  -H "X-Webhook-Token: ${WEBHOOK_SECRET}" \
   -d "${WEBHOOK_BODY}")
 HTTP_STATUS=$(echo "${RESPONSE}" | tail -1)
 RESP_BODY=$(echo "${RESPONSE}" | head -1)
