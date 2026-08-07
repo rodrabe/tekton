@@ -300,6 +300,23 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# 4b. Set the IBM Cloud API key as a secure pipeline environment property
+#     PUT is an upsert — safe to run on every deploy whether the property
+#     already exists or is being created for the first time.
+# ---------------------------------------------------------------------------
+echo "==> Setting secure pipeline property 'ibmcloud-api-key'..."
+curl -sS -X PUT \
+  "${PIPELINE_API}/tekton_pipelines/${PIPELINE_ID}/properties/ibmcloud-api-key" \
+  -H "Authorization: ${IAM_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json" \
+  -d "{
+    \"name\":  \"ibmcloud-api-key\",
+    \"value\": \"${IBMCLOUD_API_KEY}\",
+    \"type\":  \"secure\"
+  }" | jq -r '"    Property: \(.name) (\(.type))"'
+
+# ---------------------------------------------------------------------------
 # 5. Find or create the pipeline definition (links pipeline to git source)
 #
 # NOTE: The pipeline definition requires the repository to be connected as a
