@@ -456,6 +456,7 @@ WEBHOOK_BODY=$(jq -n \
   --arg image_name           "${PKR_IMAGE_NAME}" \
   --arg cos_bucket           "${COS_BUCKET}" \
   --arg cos_region           "${COS_REGION}" \
+  --arg ibmcloud_api_key     "${IBMCLOUD_API_KEY}" \
   --arg cos_instance_crn     "${COS_INSTANCE_CRN}" \
   --arg ibmcloud_api_endpoint "${IBMCLOUD_API_ENDPOINT}" \
   --arg cos_api_endpoint     "${COS_API_ENDPOINT}" \
@@ -466,6 +467,7 @@ WEBHOOK_BODY=$(jq -n \
     "image_name":            $image_name,
     "cos_bucket":            $cos_bucket,
     "cos_region":            $cos_region,
+    "ibmcloud_api_key":      $ibmcloud_api_key,
     "cos_instance_crn":      $cos_instance_crn,
     "ibmcloud_api_endpoint": $ibmcloud_api_endpoint,
     "cos_api_endpoint":      $cos_api_endpoint,
