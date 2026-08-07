@@ -68,9 +68,13 @@ spec:
         echo "--- ibmcloud.pkr.hcl ---"
         cat "$(workspaces.shared.path)/ibmcloud.pkr.hcl"
         echo "------------------------"
-        packer validate "$(workspaces.shared.path)/ibmcloud.pkr.hcl"
+        packer validate \
+          -var "ibmcloud_api_key=${PKR_VAR_ibmcloud_api_key}" \
+          "$(workspaces.shared.path)/ibmcloud.pkr.hcl"
 
-        packer build "$(workspaces.shared.path)/ibmcloud.pkr.hcl"
+        packer build \
+          -var "ibmcloud_api_key=${PKR_VAR_ibmcloud_api_key}" \
+          "$(workspaces.shared.path)/ibmcloud.pkr.hcl"
 
         echo "==> SBOM (CycloneDX JSON):"
         if [[ -f "$(workspaces.shared.path)/sbom.json" ]]; then
