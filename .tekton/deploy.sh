@@ -398,53 +398,41 @@ echo "    Definition ID: ${DEFINITION_ID}"
 # ---------------------------------------------------------------------------
 DESIRED_LISTENER="pipeline-image-builder-listener"
 
-echo "==> Looking for existing trigger 'webhook-trigger'..."
-TRIGGER_RAW=$(curl -sS -X GET \
+echo "==> Deleting existing 'webhook-trigger' (ensures secret algorithm is always current)..."
+EXISTING_TRIGGER_ID=$(curl -sS -X GET \
   "${PIPELINE_API}/tekton_pipelines/${PIPELINE_ID}/triggers" \
   -H "Authorization: ${IAM_TOKEN}" \
   -H "Accept: application/json" \
-  | jq -r '.triggers[] | select(.name == "webhook-trigger") | {id, webhook_url, event_listener} | @base64' \
+  | jq -r '.triggers[] | select(.name == "webhook-trigger") | .id // empty' \
   | head -1)
-
-if [[ -z "${TRIGGER_RAW}" ]]; then
-  echo "==> Creating generic webhook trigger..."
-  TRIGGER_RAW=$(curl -sS -X POST \
-    "${PIPELINE_API}/tekton_pipelines/${PIPELINE_ID}/triggers" \
-    -H "Authorization: ${IAM_TOKEN}" \
-    -H "Content-Type: application/json" \
-    -H "Accept: application/json" \
-    -d "{
-      \"type\": \"generic\",
-      \"name\": \"webhook-trigger\",
-      \"event_listener\": \"${DESIRED_LISTENER}\",
-      \"enabled\": true,
-      \"secret\": {
-        \"type\": \"token_matches\",
-        \"source\": \"header\",
-        \"key_name\": \"X-Webhook-Token\",
-        \"algorithm\": \"sha256\",
-        \"value\": \"${WEBHOOK_SECRET}\"
-      }
-    }" \
-    | jq -r '{id, webhook_url, event_listener} | @base64')
-  echo "    Created trigger."
-else
-  EXISTING_LISTENER=$(echo "${TRIGGER_RAW}" | base64 -d | jq -r '.event_listener')
-  if [[ "${EXISTING_LISTENER}" != "${DESIRED_LISTENER}" ]]; then
-    echo "==> Updating trigger event_listener: '${EXISTING_LISTENER}' -> '${DESIRED_LISTENER}'..."
-    EXISTING_ID=$(echo "${TRIGGER_RAW}" | base64 -d | jq -r '.id')
-    TRIGGER_RAW=$(curl -sS -X PATCH \
-      "${PIPELINE_API}/tekton_pipelines/${PIPELINE_ID}/triggers/${EXISTING_ID}" \
-      -H "Authorization: ${IAM_TOKEN}" \
-      -H "Content-Type: application/json" \
-      -H "Accept: application/json" \
-      -d "{\"event_listener\": \"${DESIRED_LISTENER}\"}" \
-      | jq -r '{id, webhook_url, event_listener} | @base64')
-    echo "    Trigger updated."
-  else
-    echo "    Found existing trigger (event_listener already correct)."
-  fi
+if [[ -n "${EXISTING_TRIGGER_ID}" ]]; then
+  curl -sS -X DELETE \
+    "${PIPELINE_API}/tekton_pipelines/${PIPELINE_ID}/triggers/${EXISTING_TRIGGER_ID}" \
+    -H "Authorization: ${IAM_TOKEN}" > /dev/null
+  echo "    Deleted trigger: ${EXISTING_TRIGGER_ID}"
 fi
+
+echo "==> Creating generic webhook trigger (sha256)..."
+TRIGGER_RAW=$(curl -sS -X POST \
+  "${PIPELINE_API}/tekton_pipelines/${PIPELINE_ID}/triggers" \
+  -H "Authorization: ${IAM_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json" \
+  -d "{
+    \"type\": \"generic\",
+    \"name\": \"webhook-trigger\",
+    \"event_listener\": \"${DESIRED_LISTENER}\",
+    \"enabled\": true,
+    \"secret\": {
+      \"type\": \"token_matches\",
+      \"source\": \"header\",
+      \"key_name\": \"X-Webhook-Token\",
+      \"algorithm\": \"sha256\",
+      \"value\": \"${WEBHOOK_SECRET}\"
+    }
+  }" \
+  | jq -r '{id, webhook_url, event_listener} | @base64')
+echo "    Created trigger."
 
 TRIGGER="${TRIGGER_RAW}"
 
@@ -484,11 +472,11 @@ WEBHOOK_BODY=$(jq -n \
     "packer_hcl_b64":        $hcl,
     "packer_key_b64":        $key
   }')
-# Compute HMAC-SHA256 of the body so the raw secret is never sent over the wire
-WEBHOOK_HMAC=$(printf '%s' "${WEBHOOK_BODY}" | openssl dgst -sha256 -hmac "${WEBHOOK_SECRET}" | awk '{print $2}')
+# IBM Cloud sha256 algorithm: hash the secret itself, send the digest as the token
+WEBHOOK_TOKEN=$(printf '%s' "${WEBHOOK_SECRET}" | openssl dgst -sha256 | awk '{print $2}')
 RESPONSE=$(curl -sS -w "\n%{http_code}" -X POST "${WEBHOOK_URL}" \
   -H "Content-Type: application/json" \
-  -H "X-Webhook-Token: ${WEBHOOK_HMAC}" \
+  -H "X-Webhook-Token: ${WEBHOOK_TOKEN}" \
   -d "${WEBHOOK_BODY}")
 HTTP_STATUS=$(echo "${RESPONSE}" | tail -1)
 RESP_BODY=$(echo "${RESPONSE}" | head -1)
