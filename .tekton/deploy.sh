@@ -488,6 +488,9 @@ WEBHOOK_BODY=$(jq -n \
     "packer_hcl_b64":        $hcl,
     "packer_key_b64":        $key
   }')
+# Brief pause so IBM Cloud can finish registering the trigger before we fire
+sleep 3
+
 RESPONSE=$(curl -sS -w "\n%{http_code}" -X POST "${WEBHOOK_URL}" \
   -H "Content-Type: application/json" \
   -H "X-Webhook-Token: ${WEBHOOK_SECRET}" \
@@ -499,6 +502,20 @@ echo "    HTTP status: ${HTTP_STATUS}"
 
 if [[ "${HTTP_STATUS}" != "200" && "${HTTP_STATUS}" != "201" && "${HTTP_STATUS}" != "202" ]]; then
   echo "ERROR: Webhook returned HTTP ${HTTP_STATUS}."
+  echo ""
+  echo "==> Fetching pipeline state for diagnostics..."
+  curl -sS -X GET \
+    "${PIPELINE_API}/tekton_pipelines/${PIPELINE_ID}" \
+    -H "Authorization: ${IAM_TOKEN}" \
+    -H "Accept: application/json" \
+    | jq '{status, worker, runs_url}'
+  echo ""
+  echo "==> Last pipeline run (if any)..."
+  curl -sS -X GET \
+    "${PIPELINE_API}/tekton_pipelines/${PIPELINE_ID}/pipeline_runs?count=1" \
+    -H "Authorization: ${IAM_TOKEN}" \
+    -H "Accept: application/json" \
+    | jq '.pipeline_runs[0] | {id, status, trigger_name, error_message: .run_summary}'
   exit 1
 fi
 
