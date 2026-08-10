@@ -83,7 +83,7 @@ COS_INSTANCE_CRN="${COS_INSTANCE_CRN:-crn:v1:staging:public:cloud-object-storage
 # 1. Authenticate
 # ---------------------------------------------------------------------------
 echo "==> Logging in to IBM Cloud..."
-ibmcloud login --apikey "${IBMCLOUD_API_KEY}" -r "${IBMCLOUD_REGION}" -a "https://test.cloud.ibm.com" -q
+ibmcloud login --apikey "${IBMCLOUD_API_KEY}" -r "${IBMCLOUD_REGION}" -a "${IBMCLOUD_API_ENDPOINT}" -q
 
 echo "==> Targeting resource group '${RESOURCE_GROUP}'..."
 ibmcloud target -g "${RESOURCE_GROUP}"
