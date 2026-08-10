@@ -387,8 +387,11 @@ for def_id in ${EXISTING_DEFINITION_IDS}; do
   echo "    Deleted definition: ${def_id}"
 done
 
-echo "==> Creating pipeline definition (branch: ${REPO_BRANCH}, path: ${TEKTON_PATH})..."
-DEFINITION_ID=$(curl -sS -X POST \
+echo "==> Creating pipeline definition..."
+echo "    URL:    ${REPO_URL}"
+echo "    Branch: ${REPO_BRANCH}"
+echo "    Path:   ${TEKTON_PATH}"
+DEFINITION_RESP=$(curl -sS -X POST \
   "${PIPELINE_API}/tekton_pipelines/${PIPELINE_ID}/definitions" \
   -H "Authorization: ${IAM_TOKEN}" \
   -H "Content-Type: application/json" \
@@ -403,9 +406,29 @@ DEFINITION_ID=$(curl -sS -X POST \
         \"tool\": {\"id\": \"${REPO_TOOL_ID}\"}
       }
     }
-  }" \
-  | jq -r '.id')
+  }")
+echo "    API response: ${DEFINITION_RESP}"
+DEFINITION_ID=$(echo "${DEFINITION_RESP}" | jq -r '.id // empty')
+if [[ -z "${DEFINITION_ID}" ]]; then
+  echo "ERROR: Failed to create pipeline definition."
+  echo "       Check that REPO_URL points to the tekton sub-repo and the"
+  echo "       git tool integration is connected in the toolchain."
+  exit 1
+fi
 echo "    Definition ID: ${DEFINITION_ID}"
+
+# Wait for IBM Cloud to validate the definition and report status
+echo "==> Waiting for definition to validate..."
+sleep 5
+DEFINITION_STATUS=$(curl -sS -X GET \
+  "${PIPELINE_API}/tekton_pipelines/${PIPELINE_ID}/definitions/${DEFINITION_ID}" \
+  -H "Authorization: ${IAM_TOKEN}" \
+  -H "Accept: application/json")
+echo "    Status: $(echo "${DEFINITION_STATUS}" | jq -r '.status // "unknown"')"
+DEFINITION_ERROR=$(echo "${DEFINITION_STATUS}" | jq -r '.status_message // empty')
+if [[ -n "${DEFINITION_ERROR}" ]]; then
+  echo "    Error detail: ${DEFINITION_ERROR}"
+fi
 
 # ---------------------------------------------------------------------------
 # 6. Find or create the generic webhook trigger
