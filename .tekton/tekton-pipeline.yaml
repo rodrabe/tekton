@@ -65,6 +65,15 @@ spec:
       description: Base64-encoded SSH private key for packer VPC SSH auth
       default: ""
   resourcetemplates:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
+        name: pipeline-image-builder-pvc-$(tt.params.image-name)
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests:
+            storage: 100Mi
     - apiVersion: tekton.dev/v1beta1
       kind: PipelineRun
       metadata:
@@ -74,12 +83,8 @@ spec:
           name: pipeline-image-builder
         workspaces:
           - name: shared
-            volumeClaimTemplate:
-              spec:
-                accessModes: [ReadWriteOnce]
-                resources:
-                  requests:
-                    storage: 100Mi
+            persistentVolumeClaim:
+              claimName: pipeline-image-builder-pvc-$(tt.params.image-name)
         params:
           - name: message
             value: $(tt.params.message)
