@@ -317,6 +317,20 @@ curl -sS -X PUT \
   }" | jq -r '"    Property: \(.name) (\(.type))"'
 
 # ---------------------------------------------------------------------------
+# 4c. Assign the IBM Managed worker to the pipeline
+#     "public" is the worker ID for the IBM Managed shared infrastructure.
+#     This is required — without a worker the pipeline returns 400 on webhook.
+# ---------------------------------------------------------------------------
+echo "==> Assigning IBM Managed worker to pipeline..."
+curl -sS -X PATCH \
+  "${PIPELINE_API}/tekton_pipelines/${PIPELINE_ID}" \
+  -H "Authorization: ${IAM_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json" \
+  -d '{"worker": {"id": "public"}}' \
+  | jq -r '"    Worker: \(.worker.id) (\(.worker.type // "managed"))"'
+
+# ---------------------------------------------------------------------------
 # 5. Find or create the pipeline definition (links pipeline to git source)
 #
 # NOTE: The pipeline definition requires the repository to be connected as a
