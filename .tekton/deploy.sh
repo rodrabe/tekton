@@ -72,8 +72,8 @@ COS_BUCKET="${COS_BUCKET:-${PKR_IMAGE_NAME}}"
 PKR_IMAGE_TAG="${PKR_IMAGE_TAG:-latest}"
 PKR_SUBNET_ID="${PKR_SUBNET_ID:-0726-a80a8b2f-4823-4083-b844-83b15d0fd3c6}"
 
-TOOLCHAIN_API="https://api.${IBMCLOUD_REGION}.devops.test.cloud.ibm.com/toolchain/v2"
-PIPELINE_API="https://api.${IBMCLOUD_REGION}.devops.test.cloud.ibm.com/pipeline/v2"
+TOOLCHAIN_API="https://api.${IBMCLOUD_REGION}.devops.dev.cloud.ibm.com/toolchain/v2"
+PIPELINE_API="https://api.${IBMCLOUD_REGION}.devops.dev.cloud.ibm.com/pipeline/v2"
 # Staging IBM Cloud and COS config passed into the store-to-cos task
 IBMCLOUD_API_ENDPOINT="${IBMCLOUD_API_ENDPOINT:-https://test.cloud.ibm.com}"
 COS_API_ENDPOINT="${COS_API_ENDPOINT:-https://s3.us-west.cloud-object-storage.test.appdomain.cloud}"
