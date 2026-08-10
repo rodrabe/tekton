@@ -70,7 +70,7 @@ echo "    SSH key pair generated for this build."
 # Use the image name as the COS bucket name (override with COS_BUCKET if needed).
 COS_BUCKET="${COS_BUCKET:-${PKR_IMAGE_NAME}}"
 PKR_IMAGE_TAG="${PKR_IMAGE_TAG:-latest}"
-PKR_SUBNET_ID="${PKR_SUBNET_ID:-0726-610dd897-188d-4c68-8a7d-f756f556f0c9}"
+PKR_SUBNET_ID="${PKR_SUBNET_ID:-0726-a80a8b2f-4823-4083-b844-83b15d0fd3c6}"
 
 TOOLCHAIN_API="https://api.${IBMCLOUD_REGION}.devops.test.cloud.ibm.com/toolchain/v2"
 PIPELINE_API="https://api.${IBMCLOUD_REGION}.devops.test.cloud.ibm.com/pipeline/v2"
