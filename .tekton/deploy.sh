@@ -417,33 +417,11 @@ if [[ -z "${DEFINITION_ID}" ]]; then
 fi
 echo "    Definition ID: ${DEFINITION_ID}"
 
-# Poll until IBM Cloud has read and validated the YAML from git
-echo "==> Waiting for definition to validate..."
-DEFINITION_STATE="unknown"
-for attempt in $(seq 1 24); do
-  sleep 5
-  DEFINITION_STATUS=$(curl -sS -X GET \
-    "${PIPELINE_API}/tekton_pipelines/${PIPELINE_ID}/definitions/${DEFINITION_ID}" \
-    -H "Authorization: ${IAM_TOKEN}" \
-    -H "Accept: application/json")
-  DEFINITION_STATE=$(echo "${DEFINITION_STATUS}" | jq -r '.status // "unknown"')
-  echo "    Attempt ${attempt}/24: status=${DEFINITION_STATE}"
-  if [[ "${DEFINITION_STATE}" == "validated" ]]; then
-    echo "    Definition validated successfully."
-    break
-  elif [[ "${DEFINITION_STATE}" == "failed" ]]; then
-    DEFINITION_ERROR=$(echo "${DEFINITION_STATUS}" | jq -r '.status_message // "no detail"')
-    echo "ERROR: Definition validation failed: ${DEFINITION_ERROR}"
-    exit 1
-  fi
-done
-if [[ "${DEFINITION_STATE}" != "validated" ]]; then
-  echo "ERROR: Definition did not reach 'validated' state after 2 minutes."
-  echo "       Last status: ${DEFINITION_STATE}"
-  echo "       Check the pipeline in the IBM Cloud Console:"
-  echo "       ${PIPELINE_ID}"
-  exit 1
-fi
+# Give IBM Cloud time to read the YAML from git before firing the webhook.
+# The staging API does not expose a definition status field so we wait a
+# fixed interval rather than polling.
+echo "==> Waiting 15s for IBM Cloud to read the pipeline definition from git..."
+sleep 15
 
 # ---------------------------------------------------------------------------
 # 6. Find or create the generic webhook trigger
