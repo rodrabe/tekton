@@ -561,35 +561,38 @@ fi
 echo ""
 echo "==> Done! Check the PipelineRun logs in the IBM Cloud Console:"
 echo "    https://test.cloud.ibm.com/devops/pipelines/tekton/${PIPELINE_ID}?env_id=ibm:yp:${IBMCLOUD_REGION}"
+# Write a ready-to-run re-trigger script to disk so the HCL is baked in.
+# Only the SSH key and image timestamp need to be regenerated per run.
+RETRIGGER_SCRIPT="$(mktemp /tmp/retrigger-XXXXXX.sh)"
+cat > "${RETRIGGER_SCRIPT}" <<RETRIGGER
+#!/usr/bin/env bash
+set -euo pipefail
+PKR_TIMESTAMP="\$(date -u +%Y%m%d%H%M%S)"
+PKR_IMAGE_NAME="ibmcloud-cli-\${PKR_TIMESTAMP}"
+PKR_SSH_KEY_DIR=\$(mktemp -d)
+ssh-keygen -t ed25519 -N "" -f "\${PKR_SSH_KEY_DIR}/packer_id_rsa" -C "packer-build-\${PKR_TIMESTAMP}" -q
+PKR_KEY_B64=\$(base64 < "\${PKR_SSH_KEY_DIR}/packer_id_rsa" | tr -d '\n')
+rm -rf "\${PKR_SSH_KEY_DIR}"
+# Re-encode HCL with the new image name substituted in
+PKR_HCL_B64=\$(printf '%s' '${PKR_HCL_B64}' | base64 -d \
+  | sed "s|${PKR_IMAGE_NAME}|\${PKR_IMAGE_NAME}|g" \
+  | base64 | tr -d '\n')
+IAM_TOKEN=\$(ibmcloud iam oauth-tokens --output json | jq -r '.iam_token')
+curl -sS -X POST "${WEBHOOK_URL}" \\
+  -H "Content-Type: application/json" \\
+  -H "X-Webhook-Token: ${WEBHOOK_SECRET}" \\
+  -d "\$(jq -n \\
+    --arg image_name            "\${PKR_IMAGE_NAME}" \\
+    --arg cos_bucket            "\${PKR_IMAGE_NAME}" \\
+    --arg cos_region            "${COS_REGION}" \\
+    --arg cos_instance_crn      "${COS_INSTANCE_CRN}" \\
+    --arg ibmcloud_api_endpoint "${IBMCLOUD_API_ENDPOINT}" \\
+    --arg cos_api_endpoint      "${COS_API_ENDPOINT}" \\
+    --arg hcl                   "\${PKR_HCL_B64}" \\
+    --arg key                   "\${PKR_KEY_B64}" \\
+    '{image_name:\$image_name,cos_bucket:\$cos_bucket,cos_region:\$cos_region,cos_instance_crn:\$cos_instance_crn,ibmcloud_api_endpoint:\$ibmcloud_api_endpoint,cos_api_endpoint:\$cos_api_endpoint,packer_hcl_b64:\$hcl,packer_key_b64:\$key}')"
+RETRIGGER
+chmod +x "${RETRIGGER_SCRIPT}"
 echo ""
-echo "==> To kick off a new pipeline run, generate a fresh key + HCL and fire the webhook:"
-echo ""
-echo "    PKR_TIMESTAMP=\"\$(date -u +%Y%m%d%H%M%S)\""
-echo "    PKR_IMAGE_NAME=\"ibmcloud-cli-\${PKR_TIMESTAMP}\""
-echo "    PKR_SSH_KEY_DIR=\$(mktemp -d)"
-echo "    ssh-keygen -t ed25519 -N \"\" -f \"\${PKR_SSH_KEY_DIR}/packer_id_rsa\" -C \"packer-build-\${PKR_TIMESTAMP}\" -q"
-echo "    PKR_KEY_B64=\$(base64 < \"\${PKR_SSH_KEY_DIR}/packer_id_rsa\" | tr -d '\\n')"
-echo "    rm -rf \"\${PKR_SSH_KEY_DIR}\""
-echo "    RESOURCE_GROUP_ID=${RESOURCE_GROUP_ID}"
-echo "    PKR_HCL_B64=\$(sed \\"
-echo "      -e \"s|TMPL_REGION|${IBMCLOUD_REGION}|g\" \\"
-echo "      -e \"s|TMPL_RESOURCE_GROUP_ID|\${RESOURCE_GROUP_ID}|g\" \\"
-echo "      -e \"s|TMPL_IMAGE_NAME|\${PKR_IMAGE_NAME}|g\" \\"
-echo "      -e \"s|TMPL_IMAGE_TAG|latest|g\" \\"
-echo "      -e \"s|TMPL_REGISTRY||g\" \\"
-echo "      -e \"s|TMPL_SUBNET_ID|${PKR_SUBNET_ID}|g\" \\"
-echo "      .tekton/ibmcloud.pkr.hcl | base64 | tr -d '\\n')"
-echo "    IAM_TOKEN=\$(ibmcloud iam oauth-tokens --output json | jq -r '.iam_token')"
-echo "    curl -sS -X POST \"${WEBHOOK_URL}\" \\"
-echo "      -H \"Content-Type: application/json\" \\"
-echo "      -H \"X-Webhook-Token: ${WEBHOOK_SECRET}\" \\"
-echo "      -d \"\$(jq -n \\"
-echo "        --arg image_name            \"\${PKR_IMAGE_NAME}\" \\"
-echo "        --arg cos_bucket            \"\${PKR_IMAGE_NAME}\" \\"
-echo "        --arg cos_region            \"${COS_REGION}\" \\"
-echo "        --arg cos_instance_crn      \"${COS_INSTANCE_CRN}\" \\"
-echo "        --arg ibmcloud_api_endpoint \"${IBMCLOUD_API_ENDPOINT}\" \\"
-echo "        --arg cos_api_endpoint      \"${COS_API_ENDPOINT}\" \\"
-echo "        --arg hcl                   \"\${PKR_HCL_B64}\" \\"
-echo "        --arg key                   \"\${PKR_KEY_B64}\" \\"
-echo "        '{image_name:\$image_name,cos_bucket:\$cos_bucket,cos_region:\$cos_region,cos_instance_crn:\$cos_instance_crn,ibmcloud_api_endpoint:\$ibmcloud_api_endpoint,cos_api_endpoint:\$cos_api_endpoint,packer_hcl_b64:\$hcl,packer_key_b64:\$key}')\""
+echo "==> To kick off a new pipeline run:"
+echo "    ${RETRIGGER_SCRIPT}"
