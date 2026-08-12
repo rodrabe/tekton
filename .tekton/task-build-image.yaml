@@ -31,7 +31,7 @@ spec:
     - name: image-name
       description: The Packer image name produced by this run
   steps:
-    - name: kickoff packer build
+    - name: kickoff-packer-build
       image: hashicorp/packer:1.15.4
       env:
         - name: STEP_PKR_HCL_B64
