@@ -32,7 +32,7 @@ spec:
       description: The Packer image name produced by this run
   steps:
     - name: fetch-packer-plugin
-      image: curlimages/curl:8.8.0
+      image: alpine:3.19
       env:
         - name: PLUGIN_VERSION
           value: $(params.packer-ibm-version)
