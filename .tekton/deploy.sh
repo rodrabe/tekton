@@ -370,26 +370,33 @@ curl -sS -X PATCH \
 PKR_PLUGIN_COS_BUCKET="${PKR_PLUGIN_COS_BUCKET:-pipeline-assets}"
 PKR_PLUGIN_COS_KEY="packer-plugins/${PKR_PLUGIN_BINARY}"
 PKR_PLUGIN_COS_URL="${COS_API_ENDPOINT}/${PKR_PLUGIN_COS_BUCKET}/${PKR_PLUGIN_COS_KEY}"
+COS_INSTANCE_ID="$(echo "${COS_INSTANCE_CRN}" | awk -F: '{print $8}')"
 echo "==> Uploading packer plugin to COS (${PKR_PLUGIN_COS_URL})..."
-# Check if already uploaded
-PLUGIN_HEAD_STATUS=$(curl -sS -o /dev/null -w "%{http_code}" -X HEAD "${PKR_PLUGIN_COS_URL}" \
+# Use HEAD to check existence; --max-time guards against partial-response hangs
+PLUGIN_HEAD_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 -X HEAD "${PKR_PLUGIN_COS_URL}" \
   -H "Authorization: ${IAM_TOKEN}" \
-  -H "ibm-service-instance-id: $(echo "${COS_INSTANCE_CRN}" | awk -F: '{print $8}')")
+  -H "ibm-service-instance-id: ${COS_INSTANCE_ID}" || echo "000")
 if [[ "${PLUGIN_HEAD_STATUS}" == "200" ]]; then
   echo "    Plugin already in COS — skipping upload."
 else
-  # Ensure bucket exists
-  curl -sS -X PUT "${COS_API_ENDPOINT}/${PKR_PLUGIN_COS_BUCKET}" \
+  echo "    HEAD status: ${PLUGIN_HEAD_STATUS} — creating bucket and uploading..."
+  # Ensure bucket exists (ignore errors — bucket may already exist)
+  curl -s -o /dev/null -X PUT "${COS_API_ENDPOINT}/${PKR_PLUGIN_COS_BUCKET}" \
     -H "Authorization: ${IAM_TOKEN}" \
-    -H "ibm-service-instance-id: $(echo "${COS_INSTANCE_CRN}" | awk -F: '{print $8}')" \
-    -H "ibm-cos-bucket-location-constraint: ${COS_REGION}-standard" \
-    > /dev/null || true
-  curl -fsSL -X PUT "${PKR_PLUGIN_COS_URL}" \
+    -H "ibm-service-instance-id: ${COS_INSTANCE_ID}" \
+    -H "ibm-cos-bucket-location-constraint: ${COS_REGION}-standard" || true
+  # Upload the binary
+  UPLOAD_STATUS=$(curl -sS -o /dev/null -w "%{http_code}" -X PUT "${PKR_PLUGIN_COS_URL}" \
     -H "Authorization: ${IAM_TOKEN}" \
-    -H "ibm-service-instance-id: $(echo "${COS_INSTANCE_CRN}" | awk -F: '{print $8}')" \
+    -H "ibm-service-instance-id: ${COS_INSTANCE_ID}" \
     -H "Content-Type: application/octet-stream" \
-    --data-binary "@${PKR_PLUGIN_CACHE}"
-  echo "    Uploaded: ${PKR_PLUGIN_COS_URL}"
+    --data-binary "@${PKR_PLUGIN_CACHE}")
+  if [[ "${UPLOAD_STATUS}" == "200" ]]; then
+    echo "    Uploaded: ${PKR_PLUGIN_COS_URL}"
+  else
+    echo "ERROR: COS upload returned HTTP ${UPLOAD_STATUS}."
+    exit 1
+  fi
 fi
 
 # ---------------------------------------------------------------------------
