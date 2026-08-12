@@ -45,12 +45,15 @@ spec:
         ARCH=amd64
         BASE_URL="https://github.com/IBM/packer-plugin-ibmcloud/releases/download/v${PLUGIN_VERSION}"
         BINARY="packer-plugin-ibmcloud_v${PLUGIN_VERSION}_x5.0_${OS}_${ARCH}"
-        PLUGIN_DIR="$(workspaces.shared.path)/packer-plugins"
+        # Packer looks for the binary under <PACKER_PLUGIN_PATH>/github.com/IBM/ibmcloud/
+        PLUGIN_DIR="$(workspaces.shared.path)/packer-plugins/github.com/IBM/ibmcloud"
         mkdir -p "${PLUGIN_DIR}"
         echo "==> Downloading packer-plugin-ibmcloud v${PLUGIN_VERSION}..."
         curl -fsSL "${BASE_URL}/${BINARY}.zip" -o /tmp/plugin.zip
         unzip -o /tmp/plugin.zip "${BINARY}" -d "${PLUGIN_DIR}/"
         chmod +x "${PLUGIN_DIR}/${BINARY}"
+        # Packer requires a sha256 sidecar file next to the binary
+        sha256sum "${PLUGIN_DIR}/${BINARY}" | awk '{print $1}' > "${PLUGIN_DIR}/${BINARY}_SHA256SUM"
         echo "==> Plugin installed to ${PLUGIN_DIR}/${BINARY}"
 
     - name: kickoff-packer-build
