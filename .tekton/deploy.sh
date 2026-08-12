@@ -190,7 +190,7 @@ build {
       "curl -fsSL https://clis.cloud.ibm.com/install/linux | bash",
       "ibmcloud plugin install dev -f",
       "ibmcloud version",
-      "curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin",
+      "curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin v1.18.1",
       "syft / -o cyclonedx-json=/tmp/sbom.json",
       "chmod 644 /tmp/sbom.json",
     ]
