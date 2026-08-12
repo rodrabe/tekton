@@ -15,8 +15,6 @@ spec:
       value: $(body.cos_bucket)
     - name: cos-region
       value: $(body.cos_region)
-    - name: ibmcloud-api-key
-      value: $(body.ibmcloud_api_key)
     - name: cos-instance-crn
       value: $(body.cos_instance_crn)
     - name: ibmcloud-api-endpoint
