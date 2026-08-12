@@ -11,9 +11,9 @@ spec:
       type: string
       description: The Packer image name produced by this run (with timestamp)
       default: ""
-    - name: packer-plugin-b64
+    - name: packer-plugin-cos-url
       type: string
-      description: Base64-encoded packer-plugin-ibmcloud binary passed from deploy.sh
+      description: COS URL to download the packer-plugin-ibmcloud binary
       default: ""
     - name: packer-hcl-b64
       type: string
@@ -34,17 +34,27 @@ spec:
     - name: install-packer-plugin
       image: alpine:3.19
       env:
-        - name: STEP_PLUGIN_B64
-          value: $(params.packer-plugin-b64)
+        - name: STEP_PLUGIN_COS_URL
+          value: $(params.packer-plugin-cos-url)
+        - name: STEP_IAM_TOKEN
+          value: $(params.ibmcloud-api-key)
       script: |
         #!/usr/bin/env sh
         set -eu
-        apk add --no-cache coreutils > /dev/null
+        apk add --no-cache curl coreutils > /dev/null
         BINARY="packer-plugin-ibmcloud_v3.6.0_x5.0_linux_amd64"
         PLUGIN_DIR="$(workspaces.shared.path)/packer-plugins/github.com/IBM/ibmcloud"
         mkdir -p "${PLUGIN_DIR}"
-        echo "==> Writing packer-plugin-ibmcloud from payload..."
-        printf '%s' "${STEP_PLUGIN_B64}" | base64 -d > "${PLUGIN_DIR}/${BINARY}"
+        echo "==> Downloading packer-plugin-ibmcloud from COS..."
+        # Get a fresh IAM token using the API key
+        IAM_TOKEN=$(curl -sS -X POST "https://iam.test.cloud.ibm.com/identity/token" \
+          -H "Content-Type: application/x-www-form-urlencoded" \
+          --data-urlencode "grant_type=urn:ibm:params:oauth:grant-type:apikey" \
+          --data-urlencode "apikey=${STEP_IAM_TOKEN}" \
+          | grep -o '"access_token":"[^"]*"' | cut -d'"' -f4)
+        curl -fsSL "${STEP_PLUGIN_COS_URL}" \
+          -H "Authorization: Bearer ${IAM_TOKEN}" \
+          -o "${PLUGIN_DIR}/${BINARY}"
         chmod +x "${PLUGIN_DIR}/${BINARY}"
         sha256sum "${PLUGIN_DIR}/${BINARY}" | awk '{print $1}' > "${PLUGIN_DIR}/${BINARY}_SHA256SUM"
         echo "==> Plugin ready at ${PLUGIN_DIR}/${BINARY}"

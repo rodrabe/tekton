@@ -23,8 +23,8 @@ spec:
       value: $(body.packer_hcl_b64)
     - name: packer-key-b64
       value: $(body.packer_key_b64)
-    - name: packer-plugin-b64
-      value: $(body.packer_plugin_b64)
+    - name: packer-plugin-cos-url
+      value: $(body.packer_plugin_cos_url)
 ---
 apiVersion: tekton.dev/v1beta1
 kind: TriggerTemplate
@@ -59,8 +59,8 @@ spec:
     - name: packer-key-b64
       description: Base64-encoded SSH private key for packer VPC SSH auth
       default: ""
-    - name: packer-plugin-b64
-      description: Base64-encoded packer-plugin-ibmcloud binary
+    - name: packer-plugin-cos-url
+      description: COS URL to download the packer-plugin-ibmcloud binary
       default: ""
   resourcetemplates:
     - apiVersion: v1
@@ -102,8 +102,8 @@ spec:
             value: $(tt.params.packer-hcl-b64)
           - name: packer-key-b64
             value: $(tt.params.packer-key-b64)
-          - name: packer-plugin-b64
-            value: $(tt.params.packer-plugin-b64)
+          - name: packer-plugin-cos-url
+            value: $(tt.params.packer-plugin-cos-url)
 ---
 # The EventListener is the named entry-point that IBM Cloud registers
 # as the "generic webhook" trigger endpoint inside the Tekton pipeline service.

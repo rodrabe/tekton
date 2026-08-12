@@ -67,8 +67,8 @@ PKR_PUB_KEY=$(cat "${PKR_SSH_KEY_DIR}/packer_id_rsa.pub")
 rm -rf "${PKR_SSH_KEY_DIR}"
 echo "    SSH key pair generated for this build."
 
-# Download the packer IBM Cloud plugin locally once and encode it.
-# This avoids the Tekton step needing to reach GitHub (which is blocked in staging).
+# Download the packer IBM Cloud plugin locally and upload it to COS once.
+# The Tekton step downloads it from COS (reachable from staging) instead of GitHub (blocked).
 PKR_PLUGIN_VERSION="${PKR_PLUGIN_VERSION:-3.6.0}"
 PKR_PLUGIN_BINARY="packer-plugin-ibmcloud_v${PKR_PLUGIN_VERSION}_x5.0_linux_amd64"
 PKR_PLUGIN_URL="https://github.com/IBM/packer-plugin-ibmcloud/releases/download/v${PKR_PLUGIN_VERSION}/${PKR_PLUGIN_BINARY}.zip"
@@ -83,8 +83,7 @@ if [[ ! -f "${PKR_PLUGIN_CACHE}" ]]; then
 else
   echo "==> Using cached packer-plugin-ibmcloud v${PKR_PLUGIN_VERSION}"
 fi
-PKR_PLUGIN_B64=$(base64 < "${PKR_PLUGIN_CACHE}" | tr -d '\n')
-echo "    Plugin encoded ($(wc -c < "${PKR_PLUGIN_CACHE}") bytes)."
+# COS upload happens after auth — deferred to step 4d below.
 # Use the image name as the COS bucket name (override with COS_BUCKET if needed).
 COS_BUCKET="${COS_BUCKET:-${PKR_IMAGE_NAME}}"
 PKR_IMAGE_TAG="${PKR_IMAGE_TAG:-latest}"
@@ -365,6 +364,35 @@ curl -sS -X PATCH \
   | jq -r '"    Worker: \(.worker.id) (\(.worker.type // "managed"))"'
 
 # ---------------------------------------------------------------------------
+# 4d. Upload the packer plugin binary to COS so the Tekton step can fetch it.
+#     Uses a fixed object key (not per-run) so subsequent deploys reuse it.
+# ---------------------------------------------------------------------------
+PKR_PLUGIN_COS_BUCKET="${PKR_PLUGIN_COS_BUCKET:-pipeline-assets}"
+PKR_PLUGIN_COS_KEY="packer-plugins/${PKR_PLUGIN_BINARY}"
+PKR_PLUGIN_COS_URL="${COS_API_ENDPOINT}/${PKR_PLUGIN_COS_BUCKET}/${PKR_PLUGIN_COS_KEY}"
+echo "==> Uploading packer plugin to COS (${PKR_PLUGIN_COS_URL})..."
+# Check if already uploaded
+PLUGIN_HEAD_STATUS=$(curl -sS -o /dev/null -w "%{http_code}" -X HEAD "${PKR_PLUGIN_COS_URL}" \
+  -H "Authorization: ${IAM_TOKEN}" \
+  -H "ibm-service-instance-id: $(echo "${COS_INSTANCE_CRN}" | awk -F: '{print $8}')")
+if [[ "${PLUGIN_HEAD_STATUS}" == "200" ]]; then
+  echo "    Plugin already in COS — skipping upload."
+else
+  # Ensure bucket exists
+  curl -sS -X PUT "${COS_API_ENDPOINT}/${PKR_PLUGIN_COS_BUCKET}" \
+    -H "Authorization: ${IAM_TOKEN}" \
+    -H "ibm-service-instance-id: $(echo "${COS_INSTANCE_CRN}" | awk -F: '{print $8}')" \
+    -H "ibm-cos-bucket-location-constraint: ${COS_REGION}-standard" \
+    > /dev/null || true
+  curl -fsSL -X PUT "${PKR_PLUGIN_COS_URL}" \
+    -H "Authorization: ${IAM_TOKEN}" \
+    -H "ibm-service-instance-id: $(echo "${COS_INSTANCE_CRN}" | awk -F: '{print $8}')" \
+    -H "Content-Type: application/octet-stream" \
+    --data-binary "@${PKR_PLUGIN_CACHE}"
+  echo "    Uploaded: ${PKR_PLUGIN_COS_URL}"
+fi
+
+# ---------------------------------------------------------------------------
 # 5. Find or create the pipeline definition (links pipeline to git source)
 #
 # NOTE: The pipeline definition requires the repository to be connected as a
@@ -518,10 +546,9 @@ echo "    COS bucket:  ${COS_BUCKET}"
 echo "    IBM Cloud:   ${IBMCLOUD_API_ENDPOINT}"
 echo "    COS endpoint:${COS_API_ENDPOINT}"
 echo "    COS CRN:     ${COS_INSTANCE_CRN}"
-# Write large b64 blobs to temp files — shell arg limit (ARG_MAX) is too small for the plugin binary.
-_TMP_HCL=$(mktemp);    printf '%s' "${PKR_HCL_B64}"    > "${_TMP_HCL}"
-_TMP_KEY=$(mktemp);    printf '%s' "${PKR_KEY_B64}"    > "${_TMP_KEY}"
-_TMP_PLUGIN=$(mktemp); printf '%s' "${PKR_PLUGIN_B64}" > "${_TMP_PLUGIN}"
+# Write large b64 blobs to temp files — shell arg limit (ARG_MAX) is too small for the HCL.
+_TMP_HCL=$(mktemp); printf '%s' "${PKR_HCL_B64}" > "${_TMP_HCL}"
+_TMP_KEY=$(mktemp); printf '%s' "${PKR_KEY_B64}" > "${_TMP_KEY}"
 WEBHOOK_BODY=$(jq -n \
   --arg image_name            "${PKR_IMAGE_NAME}" \
   --arg cos_bucket            "${COS_BUCKET}" \
@@ -529,9 +556,9 @@ WEBHOOK_BODY=$(jq -n \
   --arg cos_instance_crn      "${COS_INSTANCE_CRN}" \
   --arg ibmcloud_api_endpoint "${IBMCLOUD_API_ENDPOINT}" \
   --arg cos_api_endpoint      "${COS_API_ENDPOINT}" \
+  --arg packer_plugin_cos_url "${PKR_PLUGIN_COS_URL}" \
   --rawfile hcl               "${_TMP_HCL}" \
   --rawfile key               "${_TMP_KEY}" \
-  --rawfile plugin            "${_TMP_PLUGIN}" \
   '{
     "image_name":            $image_name,
     "cos_bucket":            $cos_bucket,
@@ -539,11 +566,11 @@ WEBHOOK_BODY=$(jq -n \
     "cos_instance_crn":      $cos_instance_crn,
     "ibmcloud_api_endpoint": $ibmcloud_api_endpoint,
     "cos_api_endpoint":      $cos_api_endpoint,
+    "packer_plugin_cos_url": $packer_plugin_cos_url,
     "packer_hcl_b64":        $hcl,
-    "packer_key_b64":        $key,
-    "packer_plugin_b64":     $plugin
+    "packer_key_b64":        $key
   }')
-rm -f "${_TMP_HCL}" "${_TMP_KEY}" "${_TMP_PLUGIN}"
+rm -f "${_TMP_HCL}" "${_TMP_KEY}"
 # Write body to a temp file — the payload is too large to pass as a curl -d argument.
 _TMP_BODY=$(mktemp)
 printf '%s' "${WEBHOOK_BODY}" > "${_TMP_BODY}"
@@ -598,22 +625,28 @@ rm -rf "\${PKR_SSH_KEY_DIR}"
 PKR_HCL_B64=\$(printf '%s' '${PKR_HCL_B64}' | base64 -d \
   | sed "s|${PKR_IMAGE_NAME}|\${PKR_IMAGE_NAME}|g" \
   | base64 | tr -d '\n')
-PKR_PLUGIN_B64='${PKR_PLUGIN_B64}'
 IAM_TOKEN=\$(ibmcloud iam oauth-tokens --output json | jq -r '.iam_token')
+_TMP_HCL=\$(mktemp); printf '%s' "\${PKR_HCL_B64}" > "\${_TMP_HCL}"
+_TMP_KEY=\$(mktemp); printf '%s' "\${PKR_KEY_B64}" > "\${_TMP_KEY}"
+_TMP_BODY=\$(mktemp)
+jq -n \\
+  --arg image_name            "\${PKR_IMAGE_NAME}" \\
+  --arg cos_bucket            "\${PKR_IMAGE_NAME}" \\
+  --arg cos_region            "${COS_REGION}" \\
+  --arg cos_instance_crn      "${COS_INSTANCE_CRN}" \\
+  --arg ibmcloud_api_endpoint "${IBMCLOUD_API_ENDPOINT}" \\
+  --arg cos_api_endpoint      "${COS_API_ENDPOINT}" \\
+  --arg packer_plugin_cos_url "${PKR_PLUGIN_COS_URL}" \\
+  --rawfile hcl               "\${_TMP_HCL}" \\
+  --rawfile key               "\${_TMP_KEY}" \\
+  '{image_name:\$image_name,cos_bucket:\$cos_bucket,cos_region:\$cos_region,cos_instance_crn:\$cos_instance_crn,ibmcloud_api_endpoint:\$ibmcloud_api_endpoint,cos_api_endpoint:\$cos_api_endpoint,packer_plugin_cos_url:\$packer_plugin_cos_url,packer_hcl_b64:\$hcl,packer_key_b64:\$key}' \\
+  > "\${_TMP_BODY}"
+rm -f "\${_TMP_HCL}" "\${_TMP_KEY}"
 curl -sS -X POST "${WEBHOOK_URL}" \\
   -H "Content-Type: application/json" \\
   -H "X-Webhook-Token: ${WEBHOOK_SECRET}" \\
-  -d "\$(jq -n \\
-    --arg image_name            "\${PKR_IMAGE_NAME}" \\
-    --arg cos_bucket            "\${PKR_IMAGE_NAME}" \\
-    --arg cos_region            "${COS_REGION}" \\
-    --arg cos_instance_crn      "${COS_INSTANCE_CRN}" \\
-    --arg ibmcloud_api_endpoint "${IBMCLOUD_API_ENDPOINT}" \\
-    --arg cos_api_endpoint      "${COS_API_ENDPOINT}" \\
-    --arg hcl                   "\${PKR_HCL_B64}" \\
-    --arg key                   "\${PKR_KEY_B64}" \\
-    --arg plugin                "\${PKR_PLUGIN_B64}" \\
-    '{image_name:\$image_name,cos_bucket:\$cos_bucket,cos_region:\$cos_region,cos_instance_crn:\$cos_instance_crn,ibmcloud_api_endpoint:\$ibmcloud_api_endpoint,cos_api_endpoint:\$cos_api_endpoint,packer_hcl_b64:\$hcl,packer_key_b64:\$key,packer_plugin_b64:\$plugin}')"
+  --data-binary "@\${_TMP_BODY}"
+rm -f "\${_TMP_BODY}"
 RETRIGGER
 chmod +x "${RETRIGGER_SCRIPT}"
 echo ""
