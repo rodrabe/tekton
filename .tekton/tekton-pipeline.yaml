@@ -30,6 +30,9 @@ metadata:
   name: pipeline-image-builder-template
 spec:
   params:
+    - name: ibmcloud-api-key
+      description: IBM Cloud API key sourced from the pipeline environment property
+      default: $(params.env.ibmcloud-api-key)
     - name: image-name
       description: Packer image name (with timestamp) from deploy.sh
       default: ""
@@ -76,6 +79,8 @@ spec:
             persistentVolumeClaim:
               claimName: pipeline-image-builder-pvc-$(tt.params.image-name)
         params:
+          - name: ibmcloud-api-key
+            value: $(tt.params.ibmcloud-api-key)
           - name: image-name
             value: $(tt.params.image-name)
           - name: cos-bucket

@@ -7,7 +7,7 @@ spec:
     - name: ibmcloud-api-key
       type: string
       description: IBM Cloud API key — sourced from the pipeline environment property
-      default: $(params.env.ibmcloud-api-key)
+      default: ""
     - name: image-name
       type: string
       description: Packer image name (with timestamp) passed from deploy.sh
