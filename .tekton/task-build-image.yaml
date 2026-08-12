@@ -11,10 +11,10 @@ spec:
       type: string
       description: The Packer image name produced by this run (with timestamp)
       default: ""
-    - name: packer-ibm-version
+    - name: packer-plugin-b64
       type: string
-      description: IBM Cloud Packer plugin version to install
-      default: "3.6.0"
+      description: Base64-encoded packer-plugin-ibmcloud binary passed from deploy.sh
+      default: ""
     - name: packer-hcl-b64
       type: string
       description: Base64-encoded ibmcloud.pkr.hcl content passed from deploy.sh
@@ -31,30 +31,23 @@ spec:
     - name: image-name
       description: The Packer image name produced by this run
   steps:
-    - name: fetch-packer-plugin
+    - name: install-packer-plugin
       image: alpine:3.19
       env:
-        - name: PLUGIN_VERSION
-          value: $(params.packer-ibm-version)
+        - name: STEP_PLUGIN_B64
+          value: $(params.packer-plugin-b64)
       script: |
         #!/usr/bin/env sh
         set -eu
-        apk add --no-cache curl unzip > /dev/null
-        PLUGIN_VERSION="${PLUGIN_VERSION:-3.6.0}"
-        OS=linux
-        ARCH=amd64
-        BASE_URL="https://github.com/IBM/packer-plugin-ibmcloud/releases/download/v${PLUGIN_VERSION}"
-        BINARY="packer-plugin-ibmcloud_v${PLUGIN_VERSION}_x5.0_${OS}_${ARCH}"
-        # Packer looks for the binary under <PACKER_PLUGIN_PATH>/github.com/IBM/ibmcloud/
+        apk add --no-cache coreutils > /dev/null
+        BINARY="packer-plugin-ibmcloud_v3.6.0_x5.0_linux_amd64"
         PLUGIN_DIR="$(workspaces.shared.path)/packer-plugins/github.com/IBM/ibmcloud"
         mkdir -p "${PLUGIN_DIR}"
-        echo "==> Downloading packer-plugin-ibmcloud v${PLUGIN_VERSION}..."
-        curl -fsSL "${BASE_URL}/${BINARY}.zip" -o /tmp/plugin.zip
-        unzip -o /tmp/plugin.zip "${BINARY}" -d "${PLUGIN_DIR}/"
+        echo "==> Writing packer-plugin-ibmcloud from payload..."
+        printf '%s' "${STEP_PLUGIN_B64}" | base64 -d > "${PLUGIN_DIR}/${BINARY}"
         chmod +x "${PLUGIN_DIR}/${BINARY}"
-        # Packer requires a sha256 sidecar file next to the binary
         sha256sum "${PLUGIN_DIR}/${BINARY}" | awk '{print $1}' > "${PLUGIN_DIR}/${BINARY}_SHA256SUM"
-        echo "==> Plugin installed to ${PLUGIN_DIR}/${BINARY}"
+        echo "==> Plugin ready at ${PLUGIN_DIR}/${BINARY}"
 
     - name: kickoff-packer-build
       image: hashicorp/packer:1.15.4
@@ -65,8 +58,6 @@ spec:
           value: $(params.packer-key-b64)
         - name: PKR_VAR_ibmcloud_api_key
           value: $(params.ibmcloud-api-key)
-        - name: PLUGIN_VERSION
-          value: $(params.packer-ibm-version)
       script: |
         #!/usr/bin/env bash
         set -euo pipefail

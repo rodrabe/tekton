@@ -40,6 +40,10 @@ spec:
       type: string
       description: Base64-encoded SSH private key for packer VPC SSH auth
       default: ""
+    - name: packer-plugin-b64
+      type: string
+      description: Base64-encoded packer-plugin-ibmcloud binary
+      default: ""
   workspaces:
     - name: shared
       description: Shared workspace for passing sbom.json between tasks
@@ -59,6 +63,8 @@ spec:
           value: $(params.packer-hcl-b64)
         - name: packer-key-b64
           value: $(params.packer-key-b64)
+        - name: packer-plugin-b64
+          value: $(params.packer-plugin-b64)
 
     - name: store-sbom-to-cos
       runAfter: [build-image]

@@ -66,6 +66,25 @@ PKR_KEY_B64=$(base64 < "${PKR_SSH_KEY_DIR}/packer_id_rsa" | tr -d '\n')
 PKR_PUB_KEY=$(cat "${PKR_SSH_KEY_DIR}/packer_id_rsa.pub")
 rm -rf "${PKR_SSH_KEY_DIR}"
 echo "    SSH key pair generated for this build."
+
+# Download the packer IBM Cloud plugin locally once and encode it.
+# This avoids the Tekton step needing to reach GitHub (which is blocked in staging).
+PKR_PLUGIN_VERSION="${PKR_PLUGIN_VERSION:-3.6.0}"
+PKR_PLUGIN_BINARY="packer-plugin-ibmcloud_v${PKR_PLUGIN_VERSION}_x5.0_linux_amd64"
+PKR_PLUGIN_URL="https://github.com/IBM/packer-plugin-ibmcloud/releases/download/v${PKR_PLUGIN_VERSION}/${PKR_PLUGIN_BINARY}.zip"
+PKR_PLUGIN_CACHE="${HOME}/.cache/packer-plugin-ibmcloud-${PKR_PLUGIN_VERSION}"
+if [[ ! -f "${PKR_PLUGIN_CACHE}" ]]; then
+  echo "==> Downloading packer-plugin-ibmcloud v${PKR_PLUGIN_VERSION}..."
+  TMP_ZIP=$(mktemp)
+  curl -fsSL "${PKR_PLUGIN_URL}" -o "${TMP_ZIP}"
+  unzip -p "${TMP_ZIP}" "${PKR_PLUGIN_BINARY}" > "${PKR_PLUGIN_CACHE}"
+  rm -f "${TMP_ZIP}"
+  echo "    Cached to ${PKR_PLUGIN_CACHE}"
+else
+  echo "==> Using cached packer-plugin-ibmcloud v${PKR_PLUGIN_VERSION}"
+fi
+PKR_PLUGIN_B64=$(base64 < "${PKR_PLUGIN_CACHE}" | tr -d '\n')
+echo "    Plugin encoded ($(wc -c < "${PKR_PLUGIN_CACHE}") bytes)."
 # Use the image name as the COS bucket name (override with COS_BUCKET if needed).
 COS_BUCKET="${COS_BUCKET:-${PKR_IMAGE_NAME}}"
 PKR_IMAGE_TAG="${PKR_IMAGE_TAG:-latest}"
@@ -517,6 +536,7 @@ WEBHOOK_BODY=$(jq -n \
   --arg cos_api_endpoint     "${COS_API_ENDPOINT}" \
   --arg hcl                  "${PKR_HCL_B64}" \
   --arg key                  "${PKR_KEY_B64}" \
+  --arg plugin               "${PKR_PLUGIN_B64}" \
   '{
     "image_name":            $image_name,
     "cos_bucket":            $cos_bucket,
@@ -525,7 +545,8 @@ WEBHOOK_BODY=$(jq -n \
     "ibmcloud_api_endpoint": $ibmcloud_api_endpoint,
     "cos_api_endpoint":      $cos_api_endpoint,
     "packer_hcl_b64":        $hcl,
-    "packer_key_b64":        $key
+    "packer_key_b64":        $key,
+    "packer_plugin_b64":     $plugin
   }')
 # Brief pause so IBM Cloud can finish registering the trigger before we fire
 sleep 3
@@ -577,6 +598,7 @@ rm -rf "\${PKR_SSH_KEY_DIR}"
 PKR_HCL_B64=\$(printf '%s' '${PKR_HCL_B64}' | base64 -d \
   | sed "s|${PKR_IMAGE_NAME}|\${PKR_IMAGE_NAME}|g" \
   | base64 | tr -d '\n')
+PKR_PLUGIN_B64='${PKR_PLUGIN_B64}'
 IAM_TOKEN=\$(ibmcloud iam oauth-tokens --output json | jq -r '.iam_token')
 curl -sS -X POST "${WEBHOOK_URL}" \\
   -H "Content-Type: application/json" \\
@@ -590,7 +612,8 @@ curl -sS -X POST "${WEBHOOK_URL}" \\
     --arg cos_api_endpoint      "${COS_API_ENDPOINT}" \\
     --arg hcl                   "\${PKR_HCL_B64}" \\
     --arg key                   "\${PKR_KEY_B64}" \\
-    '{image_name:\$image_name,cos_bucket:\$cos_bucket,cos_region:\$cos_region,cos_instance_crn:\$cos_instance_crn,ibmcloud_api_endpoint:\$ibmcloud_api_endpoint,cos_api_endpoint:\$cos_api_endpoint,packer_hcl_b64:\$hcl,packer_key_b64:\$key}')"
+    --arg plugin                "\${PKR_PLUGIN_B64}" \\
+    '{image_name:\$image_name,cos_bucket:\$cos_bucket,cos_region:\$cos_region,cos_instance_crn:\$cos_instance_crn,ibmcloud_api_endpoint:\$ibmcloud_api_endpoint,cos_api_endpoint:\$cos_api_endpoint,packer_hcl_b64:\$hcl,packer_key_b64:\$key,packer_plugin_b64:\$plugin}')"
 RETRIGGER
 chmod +x "${RETRIGGER_SCRIPT}"
 echo ""
