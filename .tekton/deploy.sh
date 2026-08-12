@@ -13,10 +13,9 @@
 #   REPO_URL            — HTTPS URL of this git repository
 #
 # Optional environment variables:
-#   TOOLCHAIN_NAME      — defaults to log-message-toolchain
-#   PIPELINE_NAME       — defaults to log-message-pipeline
+#   TOOLCHAIN_NAME      — defaults to pipeline-image-builder-toolchain
+#   PIPELINE_NAME       — defaults to pipeline-image-builder
 #   WEBHOOK_SECRET      — token sent in X-Webhook-Token header (defaults to "changeme")
-#   MESSAGE             — payload message (defaults to "Hello from IBM Cloud webhook trigger")
 #   REPO_BRANCH         — git branch for the pipeline definition (defaults to "main")
 #   TEKTON_PATH         — path inside repo containing Tekton YAML (defaults to ".tekton")
 #   COS_REGION          — COS region (defaults to IBMCLOUD_REGION)
@@ -499,15 +498,13 @@ echo "    Webhook URL: ${WEBHOOK_URL}"
 # ---------------------------------------------------------------------------
 # 7. Fire the webhook
 # ---------------------------------------------------------------------------
-MESSAGE="${MESSAGE:-Hello from IBM Cloud webhook trigger}"
-echo "==> Sending webhook with message: '${MESSAGE}'"
+echo "==> Sending webhook..."
 echo "    Image name:  ${PKR_IMAGE_NAME}"
 echo "    COS bucket:  ${COS_BUCKET}"
 echo "    IBM Cloud:   ${IBMCLOUD_API_ENDPOINT}"
 echo "    COS endpoint:${COS_API_ENDPOINT}"
 echo "    COS CRN:     ${COS_INSTANCE_CRN}"
 WEBHOOK_BODY=$(jq -n \
-  --arg message              "${MESSAGE}" \
   --arg image_name           "${PKR_IMAGE_NAME}" \
   --arg cos_bucket           "${COS_BUCKET}" \
   --arg cos_region           "${COS_REGION}" \
@@ -517,7 +514,6 @@ WEBHOOK_BODY=$(jq -n \
   --arg hcl                  "${PKR_HCL_B64}" \
   --arg key                  "${PKR_KEY_B64}" \
   '{
-    "message":               $message,
     "image_name":            $image_name,
     "cos_bucket":            $cos_bucket,
     "cos_region":            $cos_region,

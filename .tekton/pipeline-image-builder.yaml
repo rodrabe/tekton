@@ -4,10 +4,6 @@ metadata:
   name: pipeline-image-builder
 spec:
   params:
-    - name: message
-      type: string
-      description: The string message to log
-      default: ""
     - name: image-name
       type: string
       description: Packer image name (with timestamp) passed from deploy.sh
@@ -51,8 +47,6 @@ spec:
         - name: shared
           workspace: shared
       params:
-        - name: message
-          value: $(params.message)
         - name: image-name
           value: $(params.image-name)
         - name: packer-hcl-b64
