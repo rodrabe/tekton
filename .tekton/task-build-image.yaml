@@ -39,6 +39,7 @@ spec:
       script: |
         #!/usr/bin/env sh
         set -eu
+        apk add --no-cache curl unzip > /dev/null
         PLUGIN_VERSION="${PLUGIN_VERSION:-3.6.0}"
         OS=linux
         ARCH=amd64
