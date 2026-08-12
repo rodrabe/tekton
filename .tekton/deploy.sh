@@ -312,6 +312,7 @@ PROP_RESP=$(curl -sS -w "\n%{http_code}" -X POST \
   -H "Accept: application/json" \
   -d "${PROP_PAYLOAD}")
 PROP_STATUS=$(echo "${PROP_RESP}" | tail -1)
+PROP_BODY=$(echo "${PROP_RESP}" | head -1)
 if [[ "${PROP_STATUS}" == "409" ]]; then
   echo "    Property exists — updating via PUT..."
   curl -sS -X PUT \
@@ -323,8 +324,21 @@ if [[ "${PROP_STATUS}" == "409" ]]; then
 elif [[ "${PROP_STATUS}" == "201" || "${PROP_STATUS}" == "200" ]]; then
   echo "    Created: ibmcloud-api-key (secure)"
 else
-  echo "    WARNING: Unexpected status ${PROP_STATUS} setting pipeline property:"
-  echo "${PROP_RESP}" | head -1 | jq .
+  echo "    WARNING: Unexpected status ${PROP_STATUS} setting pipeline property."
+  echo "    Raw response: ${PROP_BODY}"
+  # Retry with type=text in case the staging API rejects 'secure'
+  echo "    Retrying with type=text..."
+  PROP_PAYLOAD_TEXT="{\"name\":\"ibmcloud-api-key\",\"value\":\"${IBMCLOUD_API_KEY}\",\"type\":\"text\"}"
+  RETRY_RESP=$(curl -sS -w "\n%{http_code}" -X POST \
+    "${PIPELINE_API}/tekton_pipelines/${PIPELINE_ID}/properties" \
+    -H "Authorization: ${IAM_TOKEN}" \
+    -H "Content-Type: application/json" \
+    -H "Accept: application/json" \
+    -d "${PROP_PAYLOAD_TEXT}")
+  RETRY_STATUS=$(echo "${RETRY_RESP}" | tail -1)
+  RETRY_BODY=$(echo "${RETRY_RESP}" | head -1)
+  echo "    Retry status: ${RETRY_STATUS}"
+  [[ -n "${RETRY_BODY}" ]] && echo "    Retry response: ${RETRY_BODY}"
 fi
 
 # ---------------------------------------------------------------------------
@@ -497,7 +511,6 @@ WEBHOOK_BODY=$(jq -n \
   --arg image_name           "${PKR_IMAGE_NAME}" \
   --arg cos_bucket           "${COS_BUCKET}" \
   --arg cos_region           "${COS_REGION}" \
-  --arg ibmcloud_api_key     "${IBMCLOUD_API_KEY}" \
   --arg cos_instance_crn     "${COS_INSTANCE_CRN}" \
   --arg ibmcloud_api_endpoint "${IBMCLOUD_API_ENDPOINT}" \
   --arg cos_api_endpoint     "${COS_API_ENDPOINT}" \
@@ -508,7 +521,6 @@ WEBHOOK_BODY=$(jq -n \
     "image_name":            $image_name,
     "cos_bucket":            $cos_bucket,
     "cos_region":            $cos_region,
-    "ibmcloud_api_key":      $ibmcloud_api_key,
     "cos_instance_crn":      $cos_instance_crn,
     "ibmcloud_api_endpoint": $ibmcloud_api_endpoint,
     "cos_api_endpoint":      $cos_api_endpoint,

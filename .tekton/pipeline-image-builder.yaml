@@ -20,10 +20,6 @@ spec:
       type: string
       description: COS region (e.g. us-south)
       default: "us-south"
-    - name: ibmcloud-api-key
-      type: string
-      description: IBM Cloud API key for COS upload (SECURE)
-      default: ""
     - name: cos-instance-crn
       type: string
       description: CRN of the COS service instance
@@ -63,8 +59,6 @@ spec:
           value: $(params.packer-hcl-b64)
         - name: packer-key-b64
           value: $(params.packer-key-b64)
-        - name: ibmcloud-api-key
-          value: $(params.ibmcloud-api-key)
 
     - name: store-sbom-to-cos
       runAfter: [build-image]
@@ -80,8 +74,6 @@ spec:
           value: $(params.cos-bucket)
         - name: cos-region
           value: $(params.cos-region)
-        - name: ibmcloud-api-key
-          value: $(params.ibmcloud-api-key)
         - name: cos-instance-crn
           value: $(params.cos-instance-crn)
         - name: ibmcloud-api-endpoint

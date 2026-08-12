@@ -17,9 +17,6 @@ spec:
       type: string
       description: COS region (e.g. us-south)
       default: "us-south"
-    - name: ibmcloud-api-key
-      type: string
-      description: IBM Cloud API key (SECURE — do not log)
     - name: cos-instance-crn
       type: string
       description: CRN of the COS service instance
@@ -37,7 +34,7 @@ spec:
       image: icr.io/continuous-delivery/pipeline/pipeline-base-image:2.12
       env:
         - name: STEP_API_KEY
-          value: $(params.ibmcloud-api-key)
+          value: $(params.env.ibmcloud-api-key)
         - name: STEP_BUCKET
           value: $(params.cos-bucket)
         - name: STEP_REGION

@@ -15,8 +15,6 @@ spec:
       value: $(body.cos_bucket)
     - name: cos-region
       value: $(body.cos_region)
-    - name: ibmcloud-api-key
-      value: $(body.ibmcloud_api_key)
     - name: cos-instance-crn
       value: $(body.cos_instance_crn)
     - name: ibmcloud-api-endpoint
@@ -46,9 +44,6 @@ spec:
     - name: cos-region
       description: COS region
       default: "us-south"
-    - name: ibmcloud-api-key
-      description: IBM Cloud API key for packer and COS (sourced from webhook body)
-      default: ""
     - name: cos-instance-crn
       description: CRN of the COS service instance
       default: ""
@@ -94,8 +89,6 @@ spec:
             value: $(tt.params.cos-bucket)
           - name: cos-region
             value: $(tt.params.cos-region)
-          - name: ibmcloud-api-key
-            value: $(tt.params.ibmcloud-api-key)
           - name: cos-instance-crn
             value: $(tt.params.cos-instance-crn)
           - name: ibmcloud-api-endpoint
