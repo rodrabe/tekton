@@ -544,13 +544,17 @@ WEBHOOK_BODY=$(jq -n \
     "packer_plugin_b64":     $plugin
   }')
 rm -f "${_TMP_HCL}" "${_TMP_KEY}" "${_TMP_PLUGIN}"
+# Write body to a temp file — the payload is too large to pass as a curl -d argument.
+_TMP_BODY=$(mktemp)
+printf '%s' "${WEBHOOK_BODY}" > "${_TMP_BODY}"
 # Brief pause so IBM Cloud can finish registering the trigger before we fire
 sleep 3
 
 RESPONSE=$(curl -sS -w "\n%{http_code}" -X POST "${WEBHOOK_URL}" \
   -H "Content-Type: application/json" \
   -H "X-Webhook-Token: ${WEBHOOK_SECRET}" \
-  -d "${WEBHOOK_BODY}")
+  --data-binary "@${_TMP_BODY}")
+rm -f "${_TMP_BODY}"
 HTTP_STATUS=$(echo "${RESPONSE}" | tail -1)
 RESP_BODY=$(echo "${RESPONSE}" | head -1)
 echo "    HTTP status: ${HTTP_STATUS}"
