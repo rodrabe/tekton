@@ -398,57 +398,52 @@ if [[ -z "${REPO_TOOL_ID}" ]]; then
 fi
 echo "    Repo tool ID: ${REPO_TOOL_ID}"
 
-echo "==> Deleting existing pipeline definitions (forces IBM Cloud to re-read YAML from git)..."
-EXISTING_DEFINITION_IDS=$(curl -sS -X GET \
+echo "==> Checking for existing pipeline definition (${REPO_URL} @ ${REPO_BRANCH} ${TEKTON_PATH})..."
+DEFINITION_ID=$(curl -sS -X GET \
   "${PIPELINE_API}/tekton_pipelines/${PIPELINE_ID}/definitions" \
   -H "Authorization: ${IAM_TOKEN}" \
   -H "Accept: application/json" \
-  | jq -r '.definitions[].id // empty')
-for def_id in ${EXISTING_DEFINITION_IDS}; do
-  curl -sS -X DELETE \
-    "${PIPELINE_API}/tekton_pipelines/${PIPELINE_ID}/definitions/${def_id}" \
-    -H "Authorization: ${IAM_TOKEN}" > /dev/null
-  echo "    Deleted definition: ${def_id} — waiting for removal..."
-  for i in $(seq 1 20); do
-    HTTP_CODE=$(curl -sS -o /dev/null -w "%{http_code}" -X GET \
-      "${PIPELINE_API}/tekton_pipelines/${PIPELINE_ID}/definitions/${def_id}" \
-      -H "Authorization: ${IAM_TOKEN}" \
-      -H "Accept: application/json")
-    [[ "${HTTP_CODE}" == "404" ]] && break
-    sleep 2
-  done
-  echo "    Definition ${def_id} removed."
-done
+  | jq -r --arg url "${REPO_URL}" --arg branch "${REPO_BRANCH}" --arg path "${TEKTON_PATH}" \
+    '.definitions[] | select(
+      (.source.properties.url   == $url   or (.source.properties.url   | rtrimstr(".git")) == ($url | rtrimstr(".git"))) and
+      .source.properties.branch == $branch and
+      .source.properties.path   == $path
+    ) | .id' \
+  | head -1)
 
-echo "==> Creating pipeline definition..."
-echo "    URL:    ${REPO_URL}"
-echo "    Branch: ${REPO_BRANCH}"
-echo "    Path:   ${TEKTON_PATH}"
-DEFINITION_RESP=$(curl -sS -X POST \
-  "${PIPELINE_API}/tekton_pipelines/${PIPELINE_ID}/definitions" \
-  -H "Authorization: ${IAM_TOKEN}" \
-  -H "Content-Type: application/json" \
-  -H "Accept: application/json" \
-  -d "{
-    \"source\": {
-      \"type\": \"git\",
-      \"properties\": {
-        \"url\": \"${REPO_URL}\",
-        \"branch\": \"${REPO_BRANCH}\",
-        \"path\": \"${TEKTON_PATH}\",
-        \"tool\": {\"id\": \"${REPO_TOOL_ID}\"}
+if [[ -n "${DEFINITION_ID}" ]]; then
+  echo "    Found existing definition: ${DEFINITION_ID} — skipping create."
+else
+  echo "==> Creating pipeline definition..."
+  echo "    URL:    ${REPO_URL}"
+  echo "    Branch: ${REPO_BRANCH}"
+  echo "    Path:   ${TEKTON_PATH}"
+  DEFINITION_RESP=$(curl -sS -X POST \
+    "${PIPELINE_API}/tekton_pipelines/${PIPELINE_ID}/definitions" \
+    -H "Authorization: ${IAM_TOKEN}" \
+    -H "Content-Type: application/json" \
+    -H "Accept: application/json" \
+    -d "{
+      \"source\": {
+        \"type\": \"git\",
+        \"properties\": {
+          \"url\": \"${REPO_URL}\",
+          \"branch\": \"${REPO_BRANCH}\",
+          \"path\": \"${TEKTON_PATH}\",
+          \"tool\": {\"id\": \"${REPO_TOOL_ID}\"}
+        }
       }
-    }
-  }")
-echo "    API response: ${DEFINITION_RESP}"
-DEFINITION_ID=$(echo "${DEFINITION_RESP}" | jq -r '.id // empty')
-if [[ -z "${DEFINITION_ID}" ]]; then
-  echo "ERROR: Failed to create pipeline definition."
-  echo "       Check that REPO_URL points to the tekton sub-repo and the"
-  echo "       git tool integration is connected in the toolchain."
-  exit 1
+    }")
+  echo "    API response: ${DEFINITION_RESP}"
+  DEFINITION_ID=$(echo "${DEFINITION_RESP}" | jq -r '.id // empty')
+  if [[ -z "${DEFINITION_ID}" ]]; then
+    echo "ERROR: Failed to create pipeline definition."
+    echo "       Check that REPO_URL points to the tekton sub-repo and the"
+    echo "       git tool integration is connected in the toolchain."
+    exit 1
+  fi
+  echo "    Definition ID: ${DEFINITION_ID}"
 fi
-echo "    Definition ID: ${DEFINITION_ID}"
 
 # Give IBM Cloud time to read the YAML from git before firing the webhook.
 # The staging API does not expose a definition status field so we wait a
