@@ -31,6 +31,29 @@ spec:
     - name: image-name
       description: The Packer image name produced by this run
   steps:
+    - name: fetch-packer-plugin
+      image: curlimages/curl:8.8.0
+      env:
+        - name: PLUGIN_VERSION
+          value: $(params.packer-ibm-version)
+      script: |
+        #!/usr/bin/env sh
+        set -eu
+        PLUGIN_VERSION="${PLUGIN_VERSION:-3.6.0}"
+        OS=linux
+        ARCH=amd64
+        BASE_URL="https://github.com/IBM/packer-plugin-ibmcloud/releases/download/v${PLUGIN_VERSION}"
+        BINARY="packer-plugin-ibmcloud_v${PLUGIN_VERSION}_x5.0_${OS}_${ARCH}"
+        PLUGIN_DIR="$(workspaces.shared.path)/packer-plugins/github.com/IBM/ibmcloud/${PLUGIN_VERSION}/${OS}_${ARCH}"
+        mkdir -p "${PLUGIN_DIR}"
+        echo "==> Downloading packer-plugin-ibmcloud v${PLUGIN_VERSION}..."
+        curl -fsSL "${BASE_URL}/${BINARY}.zip" -o /tmp/plugin.zip
+        curl -fsSL "${BASE_URL}/packer-plugin-ibmcloud_v${PLUGIN_VERSION}_SHA256SUMS" -o /tmp/SHA256SUMS
+        cd /tmp && grep "${BINARY}.zip" SHA256SUMS | sha256sum -c -
+        cd /tmp && unzip -o plugin.zip "${BINARY}" -d "${PLUGIN_DIR}/"
+        chmod +x "${PLUGIN_DIR}/${BINARY}"
+        echo "==> Plugin installed to ${PLUGIN_DIR}/${BINARY}"
+
     - name: kickoff-packer-build
       image: hashicorp/packer:1.15.4
       env:
@@ -40,15 +63,17 @@ spec:
           value: $(params.packer-key-b64)
         - name: PKR_VAR_ibmcloud_api_key
           value: $(params.ibmcloud-api-key)
+        - name: PLUGIN_VERSION
+          value: $(params.packer-ibm-version)
       script: |
         #!/usr/bin/env bash
         set -euo pipefail
         export PACKER_LOG=1
         export PACKER_LOG_PATH=/dev/stdout
+        # Point packer at the pre-downloaded plugin so it never calls GitHub
+        export PACKER_PLUGIN_PATH="$(workspaces.shared.path)/packer-plugins"
 
         packer version
-        packer plugins install github.com/IBM/ibmcloud 3.6.0
-        packer plugins installed
 
         # Decode SSH private key
         echo "==> Writing SSH private key..."
@@ -61,6 +86,8 @@ spec:
         echo "--- ibmcloud.pkr.hcl ---"
         cat "$(workspaces.shared.path)/ibmcloud.pkr.hcl"
         echo "------------------------"
+        echo "==> Plugins available:"
+        packer plugins installed
         packer validate \
           -var "ibmcloud_api_key=${PKR_VAR_ibmcloud_api_key}" \
           "$(workspaces.shared.path)/ibmcloud.pkr.hcl"
