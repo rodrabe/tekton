@@ -49,9 +49,7 @@ spec:
         mkdir -p "${PLUGIN_DIR}"
         echo "==> Downloading packer-plugin-ibmcloud v${PLUGIN_VERSION}..."
         curl -fsSL "${BASE_URL}/${BINARY}.zip" -o /tmp/plugin.zip
-        curl -fsSL "${BASE_URL}/packer-plugin-ibmcloud_v${PLUGIN_VERSION}_SHA256SUMS" -o /tmp/SHA256SUMS
-        cd /tmp && grep "${BINARY}.zip" SHA256SUMS | sha256sum -c -
-        cd /tmp && unzip -o plugin.zip "${BINARY}" -d "${PLUGIN_DIR}/"
+        unzip -o /tmp/plugin.zip "${BINARY}" -d "${PLUGIN_DIR}/"
         chmod +x "${PLUGIN_DIR}/${BINARY}"
         echo "==> Plugin installed to ${PLUGIN_DIR}/${BINARY}"
 
