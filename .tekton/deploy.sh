@@ -618,7 +618,7 @@ echo "==> Done! Check the PipelineRun logs in the IBM Cloud Console:"
 echo "    https://test.cloud.ibm.com/devops/pipelines/tekton/${PIPELINE_ID}?env_id=ibm:yp:${IBMCLOUD_REGION}"
 # Write a ready-to-run re-trigger script to disk so the HCL is baked in.
 # Only the SSH key and image timestamp need to be regenerated per run.
-RETRIGGER_SCRIPT="$(mktemp /tmp/retrigger-XXXXXX.sh)"
+RETRIGGER_SCRIPT="$(mktemp -t retrigger).sh"
 cat > "${RETRIGGER_SCRIPT}" <<RETRIGGER
 #!/usr/bin/env bash
 set -euo pipefail
