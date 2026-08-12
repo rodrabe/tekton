@@ -408,7 +408,17 @@ for def_id in ${EXISTING_DEFINITION_IDS}; do
   curl -sS -X DELETE \
     "${PIPELINE_API}/tekton_pipelines/${PIPELINE_ID}/definitions/${def_id}" \
     -H "Authorization: ${IAM_TOKEN}" > /dev/null
-  echo "    Deleted definition: ${def_id}"
+  echo "    Deleted definition: ${def_id} — waiting for removal..."
+  for i in $(seq 1 20); do
+    STILL_EXISTS=$(curl -sS -X GET \
+      "${PIPELINE_API}/tekton_pipelines/${PIPELINE_ID}/definitions/${def_id}" \
+      -H "Authorization: ${IAM_TOKEN}" \
+      -H "Accept: application/json" \
+      | jq -r '.id // empty')
+    [[ -z "${STILL_EXISTS}" ]] && break
+    sleep 2
+  done
+  echo "    Definition ${def_id} removed."
 done
 
 echo "==> Creating pipeline definition..."
