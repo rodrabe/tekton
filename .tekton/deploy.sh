@@ -518,16 +518,20 @@ echo "    COS bucket:  ${COS_BUCKET}"
 echo "    IBM Cloud:   ${IBMCLOUD_API_ENDPOINT}"
 echo "    COS endpoint:${COS_API_ENDPOINT}"
 echo "    COS CRN:     ${COS_INSTANCE_CRN}"
+# Write large b64 blobs to temp files — shell arg limit (ARG_MAX) is too small for the plugin binary.
+_TMP_HCL=$(mktemp);    printf '%s' "${PKR_HCL_B64}"    > "${_TMP_HCL}"
+_TMP_KEY=$(mktemp);    printf '%s' "${PKR_KEY_B64}"    > "${_TMP_KEY}"
+_TMP_PLUGIN=$(mktemp); printf '%s' "${PKR_PLUGIN_B64}" > "${_TMP_PLUGIN}"
 WEBHOOK_BODY=$(jq -n \
-  --arg image_name           "${PKR_IMAGE_NAME}" \
-  --arg cos_bucket           "${COS_BUCKET}" \
-  --arg cos_region           "${COS_REGION}" \
-  --arg cos_instance_crn     "${COS_INSTANCE_CRN}" \
+  --arg image_name            "${PKR_IMAGE_NAME}" \
+  --arg cos_bucket            "${COS_BUCKET}" \
+  --arg cos_region            "${COS_REGION}" \
+  --arg cos_instance_crn      "${COS_INSTANCE_CRN}" \
   --arg ibmcloud_api_endpoint "${IBMCLOUD_API_ENDPOINT}" \
-  --arg cos_api_endpoint     "${COS_API_ENDPOINT}" \
-  --arg hcl                  "${PKR_HCL_B64}" \
-  --arg key                  "${PKR_KEY_B64}" \
-  --arg plugin               "${PKR_PLUGIN_B64}" \
+  --arg cos_api_endpoint      "${COS_API_ENDPOINT}" \
+  --rawfile hcl               "${_TMP_HCL}" \
+  --rawfile key               "${_TMP_KEY}" \
+  --rawfile plugin            "${_TMP_PLUGIN}" \
   '{
     "image_name":            $image_name,
     "cos_bucket":            $cos_bucket,
@@ -539,6 +543,7 @@ WEBHOOK_BODY=$(jq -n \
     "packer_key_b64":        $key,
     "packer_plugin_b64":     $plugin
   }')
+rm -f "${_TMP_HCL}" "${_TMP_KEY}" "${_TMP_PLUGIN}"
 # Brief pause so IBM Cloud can finish registering the trigger before we fire
 sleep 3
 
