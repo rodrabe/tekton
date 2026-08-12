@@ -124,15 +124,6 @@ echo "==> Generating ibmcloud.pkr.hcl..."
 # Quote the heredoc delimiter (<<'PKHCL') to prevent bash from expanding ${}
 # inside the Packer HCL template — variables are substituted via sed below.
 PKR_HCL=$(cat <<'PKHCL'
-packer {
-  required_plugins {
-    ibmcloud = {
-      source  = "github.com/IBM/ibmcloud"
-      version = ">= 3.6.0"
-    }
-  }
-}
-
 variable "ibmcloud_api_key" {
   type      = string
   sensitive = true
