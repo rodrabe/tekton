@@ -45,7 +45,7 @@ spec:
         ARCH=amd64
         BASE_URL="https://github.com/IBM/packer-plugin-ibmcloud/releases/download/v${PLUGIN_VERSION}"
         BINARY="packer-plugin-ibmcloud_v${PLUGIN_VERSION}_x5.0_${OS}_${ARCH}"
-        PLUGIN_DIR="$(workspaces.shared.path)/packer-plugins/github.com/IBM/ibmcloud/${PLUGIN_VERSION}/${OS}_${ARCH}"
+        PLUGIN_DIR="$(workspaces.shared.path)/packer-plugins"
         mkdir -p "${PLUGIN_DIR}"
         echo "==> Downloading packer-plugin-ibmcloud v${PLUGIN_VERSION}..."
         curl -fsSL "${BASE_URL}/${BINARY}.zip" -o /tmp/plugin.zip
