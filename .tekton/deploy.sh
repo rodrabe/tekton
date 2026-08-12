@@ -300,21 +300,32 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 4b. Set the IBM Cloud API key as a secure pipeline environment property
-#     PUT is an upsert — safe to run on every deploy whether the property
-#     already exists or is being created for the first time.
+# 4b. Set the IBM Cloud API key as a secure pipeline environment property.
+#     POST creates it; if it already exists (409 conflict) fall back to PUT.
 # ---------------------------------------------------------------------------
 echo "==> Setting secure pipeline property 'ibmcloud-api-key'..."
-curl -sS -X PUT \
-  "${PIPELINE_API}/tekton_pipelines/${PIPELINE_ID}/properties/ibmcloud-api-key" \
+PROP_PAYLOAD="{\"name\":\"ibmcloud-api-key\",\"value\":\"${IBMCLOUD_API_KEY}\",\"type\":\"secure\"}"
+PROP_RESP=$(curl -sS -w "\n%{http_code}" -X POST \
+  "${PIPELINE_API}/tekton_pipelines/${PIPELINE_ID}/properties" \
   -H "Authorization: ${IAM_TOKEN}" \
   -H "Content-Type: application/json" \
   -H "Accept: application/json" \
-  -d "{
-    \"name\":  \"ibmcloud-api-key\",
-    \"value\": \"${IBMCLOUD_API_KEY}\",
-    \"type\":  \"secure\"
-  }" | jq -r '"    Property: \(.name) (\(.type))"'
+  -d "${PROP_PAYLOAD}")
+PROP_STATUS=$(echo "${PROP_RESP}" | tail -1)
+if [[ "${PROP_STATUS}" == "409" ]]; then
+  echo "    Property exists — updating via PUT..."
+  curl -sS -X PUT \
+    "${PIPELINE_API}/tekton_pipelines/${PIPELINE_ID}/properties/ibmcloud-api-key" \
+    -H "Authorization: ${IAM_TOKEN}" \
+    -H "Content-Type: application/json" \
+    -H "Accept: application/json" \
+    -d "${PROP_PAYLOAD}" | jq -r '"    Updated: \(.name) (\(.type))"'
+elif [[ "${PROP_STATUS}" == "201" || "${PROP_STATUS}" == "200" ]]; then
+  echo "    Created: ibmcloud-api-key (secure)"
+else
+  echo "    WARNING: Unexpected status ${PROP_STATUS} setting pipeline property:"
+  echo "${PROP_RESP}" | head -1 | jq .
+fi
 
 # ---------------------------------------------------------------------------
 # 4c. Assign the IBM Managed worker to the pipeline
@@ -486,6 +497,7 @@ WEBHOOK_BODY=$(jq -n \
   --arg image_name           "${PKR_IMAGE_NAME}" \
   --arg cos_bucket           "${COS_BUCKET}" \
   --arg cos_region           "${COS_REGION}" \
+  --arg ibmcloud_api_key     "${IBMCLOUD_API_KEY}" \
   --arg cos_instance_crn     "${COS_INSTANCE_CRN}" \
   --arg ibmcloud_api_endpoint "${IBMCLOUD_API_ENDPOINT}" \
   --arg cos_api_endpoint     "${COS_API_ENDPOINT}" \
@@ -496,6 +508,7 @@ WEBHOOK_BODY=$(jq -n \
     "image_name":            $image_name,
     "cos_bucket":            $cos_bucket,
     "cos_region":            $cos_region,
+    "ibmcloud_api_key":      $ibmcloud_api_key,
     "cos_instance_crn":      $cos_instance_crn,
     "ibmcloud_api_endpoint": $ibmcloud_api_endpoint,
     "cos_api_endpoint":      $cos_api_endpoint,
