@@ -527,7 +527,7 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 7. Trigger a pipeline run via the API
+# 7. Set trigger properties and fire a pipeline run
 # ---------------------------------------------------------------------------
 echo "==> Triggering pipeline run..."
 echo "    Image name:  ${PKR_IMAGE_NAME}"
@@ -553,37 +553,48 @@ if [[ "${HCL_UPLOAD_STATUS}" != "200" ]]; then
 fi
 echo "    HCL uploaded: ${PKR_HCL_COS_URL}"
 
-# Build the pipeline run payload using pipeline_run_properties (run-level overrides).
-# trigger_properties are only for properties pre-defined on the trigger itself.
+# Set each trigger property via PUT (create) or PATCH (update).
+# The POST /pipeline_runs endpoint only accepts {"trigger_name"} — params must
+# be pre-set on the trigger itself before firing.
 _TMP_KEY=$(mktemp); printf '%s' "${PKR_KEY_B64}" > "${_TMP_KEY}"
-_TMP_BODY=$(mktemp)
-jq -n \
-  --arg image_name            "${PKR_IMAGE_NAME}" \
-  --arg cos_bucket            "${COS_BUCKET}" \
-  --arg cos_region            "${COS_REGION}" \
-  --arg cos_instance_crn      "${COS_INSTANCE_CRN}" \
-  --arg ibmcloud_api_endpoint "${IBMCLOUD_API_ENDPOINT}" \
-  --arg cos_api_endpoint      "${COS_API_ENDPOINT}" \
-  --arg packer_plugin_cos_url "${PKR_PLUGIN_COS_URL}" \
-  --arg packer_hcl_cos_url    "${PKR_HCL_COS_URL}" \
-  --rawfile key               "${_TMP_KEY}" \
-  '{
-    "trigger_name": "manual-trigger",
-    "pipeline_run_properties": [
-      {"name": "image-name",            "value": $image_name,            "type": "text"},
-      {"name": "cos-bucket",            "value": $cos_bucket,            "type": "text"},
-      {"name": "cos-region",            "value": $cos_region,            "type": "text"},
-      {"name": "cos-instance-crn",      "value": $cos_instance_crn,      "type": "text"},
-      {"name": "ibmcloud-api-endpoint", "value": $ibmcloud_api_endpoint, "type": "text"},
-      {"name": "cos-api-endpoint",      "value": $cos_api_endpoint,      "type": "text"},
-      {"name": "packer-plugin-cos-url", "value": $packer_plugin_cos_url, "type": "text"},
-      {"name": "packer-hcl-cos-url",    "value": $packer_hcl_cos_url,    "type": "text"},
-      {"name": "packer-key-b64",        "value": $key,                   "type": "text"}
-    ]
-  }' > "${_TMP_BODY}"
-rm -f "${_TMP_KEY}"
+_set_trigger_prop() {
+  local prop_name="$1" prop_value="$2"
+  local encoded_name
+  encoded_name=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "${prop_name}")
+  local prop_url="${PIPELINE_API}/tekton_pipelines/${PIPELINE_ID}/triggers/${TRIGGER_ID}/properties/${encoded_name}"
+  local payload
+  payload=$(jq -n --arg n "${prop_name}" --arg v "${prop_value}" '{"name":$n,"value":$v,"type":"text"}')
+  # Try PUT first; if 404 use POST to create
+  local status
+  status=$(curl -sS -o /dev/null -w "%{http_code}" -X PUT "${prop_url}" \
+    -H "Authorization: ${IAM_TOKEN}" \
+    -H "Content-Type: application/json" \
+    -d "${payload}")
+  if [[ "${status}" == "404" || "${status}" == "400" ]]; then
+    curl -sS -o /dev/null -X POST \
+      "${PIPELINE_API}/tekton_pipelines/${PIPELINE_ID}/triggers/${TRIGGER_ID}/properties" \
+      -H "Authorization: ${IAM_TOKEN}" \
+      -H "Content-Type: application/json" \
+      -d "${payload}"
+  fi
+}
 
-echo "==> Request body:"; cat "${_TMP_BODY}" | jq .
+echo "==> Setting trigger properties..."
+_set_trigger_prop "image-name"            "${PKR_IMAGE_NAME}"
+_set_trigger_prop "cos-bucket"            "${COS_BUCKET}"
+_set_trigger_prop "cos-region"            "${COS_REGION}"
+_set_trigger_prop "cos-instance-crn"      "${COS_INSTANCE_CRN}"
+_set_trigger_prop "ibmcloud-api-endpoint" "${IBMCLOUD_API_ENDPOINT}"
+_set_trigger_prop "cos-api-endpoint"      "${COS_API_ENDPOINT}"
+_set_trigger_prop "packer-plugin-cos-url" "${PKR_PLUGIN_COS_URL}"
+_set_trigger_prop "packer-hcl-cos-url"    "${PKR_HCL_COS_URL}"
+_set_trigger_prop "packer-key-b64"        "$(cat "${_TMP_KEY}")"
+rm -f "${_TMP_KEY}"
+echo "    Trigger properties set."
+
+# Fire the run — only trigger_name is accepted in the payload
+_TMP_BODY=$(mktemp)
+printf '{"trigger_name":"manual-trigger"}' > "${_TMP_BODY}"
 _TMP_RESP=$(mktemp)
 HTTP_STATUS=$(curl -sS -o "${_TMP_RESP}" -w "%{http_code}" -X POST \
   "${PIPELINE_API}/tekton_pipelines/${PIPELINE_ID}/pipeline_runs" \
