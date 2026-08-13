@@ -631,9 +631,9 @@ echo ""
 echo "==> Done! Pipeline run started."
 [[ -n "${RUN_ID}" ]] && echo "    Run ID: ${RUN_ID}"
 echo "    https://test.cloud.ibm.com/devops/pipelines/tekton/${PIPELINE_ID}?env_id=ibm:yp:${IBMCLOUD_REGION}"
-# Write a ready-to-run re-trigger script to disk so all values are baked in.
-# Only the SSH key and image timestamp need to be regenerated per run.
-RETRIGGER_SCRIPT="$(mktemp -t retrigger).sh"
+# Write a ready-to-run re-trigger script to a fixed location in the repo.
+# Commit or keep it locally — run it any time to start a new pipeline run.
+RETRIGGER_SCRIPT=".tekton/trigger.sh"
 cat > "${RETRIGGER_SCRIPT}" <<RETRIGGER
 #!/usr/bin/env bash
 set -euo pipefail
