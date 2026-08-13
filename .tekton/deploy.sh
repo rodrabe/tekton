@@ -629,8 +629,11 @@ RUN_ID=$(echo "${RESP_BODY}" | jq -r '.id // empty')
 
 echo ""
 echo "==> Done! Pipeline run started."
-[[ -n "${RUN_ID}" ]] && echo "    Run ID: ${RUN_ID}"
-echo "    https://test.cloud.ibm.com/devops/pipelines/tekton/${PIPELINE_ID}?env_id=ibm:yp:${IBMCLOUD_REGION}"
+if [[ -n "${RUN_ID}" ]]; then
+  echo "    Run ID: ${RUN_ID}"
+  echo "    Logs:   https://dev.console.test.cloud.ibm.com/devops/pipelines/tekton/${PIPELINE_ID}/runs/${RUN_ID}?env_id=ibm:ys1:${IBMCLOUD_REGION}"
+fi
+echo "    All runs: https://dev.console.test.cloud.ibm.com/devops/pipelines/tekton/${PIPELINE_ID}?env_id=ibm:ys1:${IBMCLOUD_REGION}"
 # Write a ready-to-run re-trigger script to a fixed location in the repo.
 # Commit or keep it locally — run it any time to start a new pipeline run.
 RETRIGGER_SCRIPT=".tekton/trigger.sh"
@@ -694,11 +697,14 @@ _set_prop "packer-plugin-cos-url" "${PKR_PLUGIN_COS_URL}"
 _set_prop "packer-hcl-cos-url"    "\${PKR_HCL_COS_URL}"
 _set_prop "packer-key-b64"        "\${PKR_KEY_B64}"
 
-curl -sS -X POST "\${PIPELINE_API}/tekton_pipelines/\${PIPELINE_ID}/pipeline_runs" \
+RUN=$(curl -sS -X POST "\${PIPELINE_API}/tekton_pipelines/\${PIPELINE_ID}/pipeline_runs" \
   -H "Authorization: \${IAM_TOKEN}" \
   -H "Content-Type: application/json" \
   -H "Accept: application/json" \
-  -d '{"trigger_name":"manual-trigger"}' | jq '{id,status,html_url}'
+  -d '{"trigger_name":"manual-trigger"}')
+RUN_ID=\$(echo "\${RUN}" | jq -r '.id // empty')
+echo "\${RUN}" | jq '{id, status}'
+[[ -n "\${RUN_ID}" ]] && echo "Logs: https://dev.console.test.cloud.ibm.com/devops/pipelines/tekton/\${PIPELINE_ID}/runs/\${RUN_ID}?env_id=ibm:ys1:us-south"
 RETRIGGER
 chmod +x "${RETRIGGER_SCRIPT}"
 echo ""
