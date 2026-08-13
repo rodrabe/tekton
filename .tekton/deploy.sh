@@ -497,66 +497,67 @@ echo "==> Waiting 15s for IBM Cloud to read the pipeline definition from git..."
 sleep 15
 
 # ---------------------------------------------------------------------------
-# 6. Find or create the generic webhook trigger
+# 6. Find or create the manual trigger
 # ---------------------------------------------------------------------------
-DESIRED_LISTENER="pipeline-image-builder-listener"
-
-echo "==> Deleting existing 'webhook-trigger' (ensures secret algorithm is always current)..."
-EXISTING_TRIGGER_ID=$(curl -sS -X GET \
+echo "==> Finding or creating manual trigger..."
+TRIGGER_ID=$(curl -sS -X GET \
   "${PIPELINE_API}/tekton_pipelines/${PIPELINE_ID}/triggers" \
   -H "Authorization: ${IAM_TOKEN}" \
   -H "Accept: application/json" \
-  | jq -r '.triggers[] | select(.name == "webhook-trigger") | .id // empty' \
+  | jq -r '.triggers[] | select(.name == "manual-trigger" and .type == "manual") | .id // empty' \
   | head -1)
-if [[ -n "${EXISTING_TRIGGER_ID}" ]]; then
-  curl -sS -X DELETE \
-    "${PIPELINE_API}/tekton_pipelines/${PIPELINE_ID}/triggers/${EXISTING_TRIGGER_ID}" \
-    -H "Authorization: ${IAM_TOKEN}" > /dev/null
-  echo "    Deleted trigger: ${EXISTING_TRIGGER_ID}"
+
+if [[ -n "${TRIGGER_ID}" ]]; then
+  echo "    Found existing manual trigger: ${TRIGGER_ID}"
+else
+  echo "==> Creating manual trigger..."
+  TRIGGER_ID=$(curl -sS -X POST \
+    "${PIPELINE_API}/tekton_pipelines/${PIPELINE_ID}/triggers" \
+    -H "Authorization: ${IAM_TOKEN}" \
+    -H "Content-Type: application/json" \
+    -H "Accept: application/json" \
+    -d "{
+      \"type\": \"manual\",
+      \"name\": \"manual-trigger\",
+      \"event_listener\": \"pipeline-image-builder-listener\",
+      \"enabled\": true
+    }" \
+    | jq -r '.id // empty')
+  echo "    Created manual trigger: ${TRIGGER_ID}"
 fi
 
-echo "==> Creating generic webhook trigger (sha256)..."
-TRIGGER_RAW=$(curl -sS -X POST \
-  "${PIPELINE_API}/tekton_pipelines/${PIPELINE_ID}/triggers" \
-  -H "Authorization: ${IAM_TOKEN}" \
-  -H "Content-Type: application/json" \
-  -H "Accept: application/json" \
-  -d "{
-    \"type\": \"generic\",
-    \"name\": \"webhook-trigger\",
-    \"event_listener\": \"${DESIRED_LISTENER}\",
-    \"enabled\": true,
-    \"secret\": {
-      \"type\": \"token_matches\",
-      \"source\": \"header\",
-      \"key_name\": \"X-Webhook-Token\",
-      \"algorithm\": \"plain\",
-      \"value\": \"${WEBHOOK_SECRET}\"
-    }
-  }" \
-  | jq -r '{id, webhook_url, event_listener} | @base64')
-echo "    Created trigger."
-
-TRIGGER="${TRIGGER_RAW}"
-
-TRIGGER_ID=$(echo "${TRIGGER}" | base64 -d | jq -r '.id')
-WEBHOOK_URL=$(echo "${TRIGGER}" | base64 -d | jq -r '.webhook_url')
-echo "    Trigger ID:  ${TRIGGER_ID}"
-echo "    Webhook URL: ${WEBHOOK_URL}"
-
 # ---------------------------------------------------------------------------
-# 7. Fire the webhook
+# 7. Trigger a pipeline run via the API
 # ---------------------------------------------------------------------------
-echo "==> Sending webhook..."
+echo "==> Triggering pipeline run..."
 echo "    Image name:  ${PKR_IMAGE_NAME}"
 echo "    COS bucket:  ${COS_BUCKET}"
 echo "    IBM Cloud:   ${IBMCLOUD_API_ENDPOINT}"
 echo "    COS endpoint:${COS_API_ENDPOINT}"
 echo "    COS CRN:     ${COS_INSTANCE_CRN}"
-# Write large b64 blobs to temp files — shell arg limit (ARG_MAX) is too small for the HCL.
+
+# Upload HCL to COS so it doesn't hit API body size limits
+PKR_HCL_COS_KEY="pipeline-runs/${PKR_IMAGE_NAME}/ibmcloud.pkr.hcl.b64"
+PKR_HCL_COS_URL="${COS_API_ENDPOINT}/${PKR_PLUGIN_COS_BUCKET}/${PKR_HCL_COS_KEY}"
+echo "==> Uploading HCL to COS..."
 _TMP_HCL=$(mktemp); printf '%s' "${PKR_HCL_B64}" > "${_TMP_HCL}"
+HCL_UPLOAD_STATUS=$(curl -sS -o /dev/null -w "%{http_code}" -X PUT "${PKR_HCL_COS_URL}" \
+  -H "Authorization: ${IAM_TOKEN}" \
+  -H "ibm-service-instance-id: ${COS_INSTANCE_ID}" \
+  -H "Content-Type: text/plain" \
+  --data-binary "@${_TMP_HCL}")
+rm -f "${_TMP_HCL}"
+if [[ "${HCL_UPLOAD_STATUS}" != "200" ]]; then
+  echo "ERROR: HCL upload to COS returned HTTP ${HCL_UPLOAD_STATUS}."
+  exit 1
+fi
+echo "    HCL uploaded: ${PKR_HCL_COS_URL}"
+
+# Build trigger_properties — pass all params directly; key and COS URLs are small enough
 _TMP_KEY=$(mktemp); printf '%s' "${PKR_KEY_B64}" > "${_TMP_KEY}"
-WEBHOOK_BODY=$(jq -n \
+_TMP_BODY=$(mktemp)
+jq -n \
+  --arg trigger_id            "${TRIGGER_ID}" \
   --arg image_name            "${PKR_IMAGE_NAME}" \
   --arg cos_bucket            "${COS_BUCKET}" \
   --arg cos_region            "${COS_REGION}" \
@@ -564,29 +565,29 @@ WEBHOOK_BODY=$(jq -n \
   --arg ibmcloud_api_endpoint "${IBMCLOUD_API_ENDPOINT}" \
   --arg cos_api_endpoint      "${COS_API_ENDPOINT}" \
   --arg packer_plugin_cos_url "${PKR_PLUGIN_COS_URL}" \
-  --rawfile hcl               "${_TMP_HCL}" \
+  --arg packer_hcl_cos_url    "${PKR_HCL_COS_URL}" \
   --rawfile key               "${_TMP_KEY}" \
   '{
-    "image_name":            $image_name,
-    "cos_bucket":            $cos_bucket,
-    "cos_region":            $cos_region,
-    "cos_instance_crn":      $cos_instance_crn,
-    "ibmcloud_api_endpoint": $ibmcloud_api_endpoint,
-    "cos_api_endpoint":      $cos_api_endpoint,
-    "packer_plugin_cos_url": $packer_plugin_cos_url,
-    "packer_hcl_b64":        $hcl,
-    "packer_key_b64":        $key
-  }')
-rm -f "${_TMP_HCL}" "${_TMP_KEY}"
-# Write body to a temp file — the payload is too large to pass as a curl -d argument.
-_TMP_BODY=$(mktemp)
-printf '%s' "${WEBHOOK_BODY}" > "${_TMP_BODY}"
-# Brief pause so IBM Cloud can finish registering the trigger before we fire
-sleep 3
+    "trigger": {"id": $trigger_id},
+    "trigger_properties": [
+      {"name": "image-name",            "value": $image_name,            "type": "text"},
+      {"name": "cos-bucket",            "value": $cos_bucket,            "type": "text"},
+      {"name": "cos-region",            "value": $cos_region,            "type": "text"},
+      {"name": "cos-instance-crn",      "value": $cos_instance_crn,      "type": "text"},
+      {"name": "ibmcloud-api-endpoint", "value": $ibmcloud_api_endpoint, "type": "text"},
+      {"name": "cos-api-endpoint",      "value": $cos_api_endpoint,      "type": "text"},
+      {"name": "packer-plugin-cos-url", "value": $packer_plugin_cos_url, "type": "text"},
+      {"name": "packer-hcl-cos-url",    "value": $packer_hcl_cos_url,    "type": "text"},
+      {"name": "packer-key-b64",        "value": $key,                   "type": "text"}
+    ]
+  }' > "${_TMP_BODY}"
+rm -f "${_TMP_KEY}"
 
-RESPONSE=$(curl -sS -w "\n%{http_code}" -X POST "${WEBHOOK_URL}" \
+RESPONSE=$(curl -sS -w "\n%{http_code}" -X POST \
+  "${PIPELINE_API}/tekton_pipelines/${PIPELINE_ID}/pipeline_runs" \
+  -H "Authorization: ${IAM_TOKEN}" \
   -H "Content-Type: application/json" \
-  -H "X-Webhook-Token: ${WEBHOOK_SECRET}" \
+  -H "Accept: application/json" \
   --data-binary "@${_TMP_BODY}")
 rm -f "${_TMP_BODY}"
 HTTP_STATUS=$(echo "${RESPONSE}" | tail -1)
@@ -595,7 +596,7 @@ echo "    HTTP status: ${HTTP_STATUS}"
 [[ -n "${RESP_BODY}" && "${RESP_BODY}" != "{}" ]] && echo "    Response: ${RESP_BODY}"
 
 if [[ "${HTTP_STATUS}" != "200" && "${HTTP_STATUS}" != "201" && "${HTTP_STATUS}" != "202" ]]; then
-  echo "ERROR: Webhook returned HTTP ${HTTP_STATUS}."
+  echo "ERROR: Pipeline run API returned HTTP ${HTTP_STATUS}."
   echo ""
   echo "==> Fetching pipeline state for diagnostics..."
   curl -sS -X GET \
@@ -612,11 +613,13 @@ if [[ "${HTTP_STATUS}" != "200" && "${HTTP_STATUS}" != "201" && "${HTTP_STATUS}"
     | jq '.pipeline_runs[0] | {id, status, trigger_name, error_message: .run_summary}'
   exit 1
 fi
+RUN_ID=$(echo "${RESP_BODY}" | jq -r '.id // empty')
 
 echo ""
-echo "==> Done! Check the PipelineRun logs in the IBM Cloud Console:"
+echo "==> Done! Pipeline run started."
+[[ -n "${RUN_ID}" ]] && echo "    Run ID: ${RUN_ID}"
 echo "    https://test.cloud.ibm.com/devops/pipelines/tekton/${PIPELINE_ID}?env_id=ibm:yp:${IBMCLOUD_REGION}"
-# Write a ready-to-run re-trigger script to disk so the HCL is baked in.
+# Write a ready-to-run re-trigger script to disk so all values are baked in.
 # Only the SSH key and image timestamp need to be regenerated per run.
 RETRIGGER_SCRIPT="$(mktemp -t retrigger).sh"
 cat > "${RETRIGGER_SCRIPT}" <<RETRIGGER
@@ -628,15 +631,23 @@ PKR_SSH_KEY_DIR=\$(mktemp -d)
 ssh-keygen -t ed25519 -N "" -f "\${PKR_SSH_KEY_DIR}/packer_id_rsa" -C "packer-build-\${PKR_TIMESTAMP}" -q
 PKR_KEY_B64=\$(base64 < "\${PKR_SSH_KEY_DIR}/packer_id_rsa" | tr -d '\n')
 rm -rf "\${PKR_SSH_KEY_DIR}"
-# Re-encode HCL with the new image name substituted in
+# Re-encode HCL with the new image name substituted in and upload to COS
 PKR_HCL_B64=\$(printf '%s' '${PKR_HCL_B64}' | base64 -d \
   | sed "s|${PKR_IMAGE_NAME}|\${PKR_IMAGE_NAME}|g" \
   | base64 | tr -d '\n')
 IAM_TOKEN=\$(ibmcloud iam oauth-tokens --output json | jq -r '.iam_token')
+PKR_HCL_COS_URL="${COS_API_ENDPOINT}/${PKR_PLUGIN_COS_BUCKET}/pipeline-runs/\${PKR_IMAGE_NAME}/ibmcloud.pkr.hcl.b64"
 _TMP_HCL=\$(mktemp); printf '%s' "\${PKR_HCL_B64}" > "\${_TMP_HCL}"
+curl -sS -o /dev/null -X PUT "\${PKR_HCL_COS_URL}" \\
+  -H "Authorization: \${IAM_TOKEN}" \\
+  -H "ibm-service-instance-id: $(echo "${COS_INSTANCE_CRN}" | awk -F: '{print $8}')" \\
+  -H "Content-Type: text/plain" \\
+  --data-binary "@\${_TMP_HCL}"
+rm -f "\${_TMP_HCL}"
 _TMP_KEY=\$(mktemp); printf '%s' "\${PKR_KEY_B64}" > "\${_TMP_KEY}"
 _TMP_BODY=\$(mktemp)
 jq -n \\
+  --arg trigger_id            "${TRIGGER_ID}" \\
   --arg image_name            "\${PKR_IMAGE_NAME}" \\
   --arg cos_bucket            "\${PKR_IMAGE_NAME}" \\
   --arg cos_region            "${COS_REGION}" \\
@@ -644,15 +655,25 @@ jq -n \\
   --arg ibmcloud_api_endpoint "${IBMCLOUD_API_ENDPOINT}" \\
   --arg cos_api_endpoint      "${COS_API_ENDPOINT}" \\
   --arg packer_plugin_cos_url "${PKR_PLUGIN_COS_URL}" \\
-  --rawfile hcl               "\${_TMP_HCL}" \\
+  --arg packer_hcl_cos_url    "\${PKR_HCL_COS_URL}" \\
   --rawfile key               "\${_TMP_KEY}" \\
-  '{image_name:\$image_name,cos_bucket:\$cos_bucket,cos_region:\$cos_region,cos_instance_crn:\$cos_instance_crn,ibmcloud_api_endpoint:\$ibmcloud_api_endpoint,cos_api_endpoint:\$cos_api_endpoint,packer_plugin_cos_url:\$packer_plugin_cos_url,packer_hcl_b64:\$hcl,packer_key_b64:\$key}' \\
-  > "\${_TMP_BODY}"
-rm -f "\${_TMP_HCL}" "\${_TMP_KEY}"
-curl -sS -X POST "${WEBHOOK_URL}" \\
+  '{"trigger":{"id":$trigger_id},"trigger_properties":[
+    {"name":"image-name",            "value":$image_name,            "type":"text"},
+    {"name":"cos-bucket",            "value":$cos_bucket,            "type":"text"},
+    {"name":"cos-region",            "value":$cos_region,            "type":"text"},
+    {"name":"cos-instance-crn",      "value":$cos_instance_crn,      "type":"text"},
+    {"name":"ibmcloud-api-endpoint", "value":$ibmcloud_api_endpoint, "type":"text"},
+    {"name":"cos-api-endpoint",      "value":$cos_api_endpoint,      "type":"text"},
+    {"name":"packer-plugin-cos-url", "value":$packer_plugin_cos_url, "type":"text"},
+    {"name":"packer-hcl-cos-url",    "value":$packer_hcl_cos_url,    "type":"text"},
+    {"name":"packer-key-b64",        "value":$key,                   "type":"text"}
+  ]}' > "\${_TMP_BODY}"
+rm -f "\${_TMP_KEY}"
+curl -sS -X POST "${PIPELINE_API}/tekton_pipelines/${PIPELINE_ID}/pipeline_runs" \\
+  -H "Authorization: \${IAM_TOKEN}" \\
   -H "Content-Type: application/json" \\
-  -H "X-Webhook-Token: ${WEBHOOK_SECRET}" \\
-  --data-binary "@\${_TMP_BODY}"
+  -H "Accept: application/json" \\
+  --data-binary "@\${_TMP_BODY}" | jq '{id,status,html_url}'
 rm -f "\${_TMP_BODY}"
 RETRIGGER
 chmod +x "${RETRIGGER_SCRIPT}"

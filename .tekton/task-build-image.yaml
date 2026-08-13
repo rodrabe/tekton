@@ -15,9 +15,9 @@ spec:
       type: string
       description: COS URL to download the packer-plugin-ibmcloud binary
       default: ""
-    - name: packer-hcl-b64
+    - name: packer-hcl-cos-url
       type: string
-      description: Base64-encoded ibmcloud.pkr.hcl content passed from deploy.sh
+      description: COS URL of the base64-encoded ibmcloud.pkr.hcl
       default: ""
     - name: packer-key-b64
       type: string
@@ -62,8 +62,8 @@ spec:
     - name: kickoff-packer-build
       image: hashicorp/packer:1.15.4
       env:
-        - name: STEP_PKR_HCL_B64
-          value: $(params.packer-hcl-b64)
+        - name: STEP_PKR_HCL_COS_URL
+          value: $(params.packer-hcl-cos-url)
         - name: STEP_PKR_KEY_B64
           value: $(params.packer-key-b64)
         - name: PKR_VAR_ibmcloud_api_key
@@ -83,9 +83,16 @@ spec:
         printf '%s' "${STEP_PKR_KEY_B64}" | base64 -d > "$(workspaces.shared.path)/packer_id_rsa"
         chmod 600 "$(workspaces.shared.path)/packer_id_rsa"
 
-        # Decode and write the generated HCL file
+        # Download and decode the HCL from COS
+        echo "==> Downloading ibmcloud.pkr.hcl from COS..."
+        HCL_IAM_TOKEN=$(wget -qO- --post-data "grant_type=urn:ibm:params:oauth:grant-type:apikey&apikey=${PKR_VAR_ibmcloud_api_key}" \
+          --header "Content-Type: application/x-www-form-urlencoded" \
+          "https://iam.test.cloud.ibm.com/identity/token" \
+          | grep -o '"access_token":"[^"]*"' | cut -d'"' -f4)
+        wget -qO- "${STEP_PKR_HCL_COS_URL}" \
+          --header "Authorization: Bearer ${HCL_IAM_TOKEN}" \
+          | base64 -d > "$(workspaces.shared.path)/ibmcloud.pkr.hcl"
         echo "==> Writing ibmcloud.pkr.hcl..."
-        printf '%s' "${STEP_PKR_HCL_B64}" | base64 -d > "$(workspaces.shared.path)/ibmcloud.pkr.hcl"
         echo "--- ibmcloud.pkr.hcl ---"
         cat "$(workspaces.shared.path)/ibmcloud.pkr.hcl"
         echo "------------------------"
