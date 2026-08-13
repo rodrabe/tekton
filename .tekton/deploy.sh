@@ -583,15 +583,16 @@ jq -n \
   }' > "${_TMP_BODY}"
 rm -f "${_TMP_KEY}"
 
-RESPONSE=$(curl -sS -w "\n%{http_code}" -X POST \
+echo "==> Request body:"; cat "${_TMP_BODY}" | jq .
+_TMP_RESP=$(mktemp)
+HTTP_STATUS=$(curl -sS -o "${_TMP_RESP}" -w "%{http_code}" -X POST \
   "${PIPELINE_API}/tekton_pipelines/${PIPELINE_ID}/pipeline_runs" \
   -H "Authorization: ${IAM_TOKEN}" \
   -H "Content-Type: application/json" \
   -H "Accept: application/json" \
   --data-binary "@${_TMP_BODY}")
 rm -f "${_TMP_BODY}"
-HTTP_STATUS=$(echo "${RESPONSE}" | tail -1)
-RESP_BODY=$(echo "${RESPONSE}" | head -1)
+RESP_BODY=$(cat "${_TMP_RESP}"); rm -f "${_TMP_RESP}"
 echo "    HTTP status: ${HTTP_STATUS}"
 [[ -n "${RESP_BODY}" && "${RESP_BODY}" != "{}" ]] && echo "    Response: ${RESP_BODY}"
 
