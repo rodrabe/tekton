@@ -637,55 +637,68 @@ RETRIGGER_SCRIPT="$(mktemp -t retrigger).sh"
 cat > "${RETRIGGER_SCRIPT}" <<RETRIGGER
 #!/usr/bin/env bash
 set -euo pipefail
+
+PIPELINE_API="${PIPELINE_API}"
+PIPELINE_ID="${PIPELINE_ID}"
+TRIGGER_ID="${TRIGGER_ID}"
+COS_API_ENDPOINT="${COS_API_ENDPOINT}"
+COS_PLUGIN_BUCKET="${PKR_PLUGIN_COS_BUCKET}"
+COS_INSTANCE_ID="${COS_INSTANCE_ID}"
+ORIG_IMAGE_NAME="${PKR_IMAGE_NAME}"
+HCL_B64_ORIG='${PKR_HCL_B64}'
+
 PKR_TIMESTAMP="\$(date -u +%Y%m%d%H%M%S)"
 PKR_IMAGE_NAME="ibmcloud-cli-\${PKR_TIMESTAMP}"
 PKR_SSH_KEY_DIR=\$(mktemp -d)
 ssh-keygen -t ed25519 -N "" -f "\${PKR_SSH_KEY_DIR}/packer_id_rsa" -C "packer-build-\${PKR_TIMESTAMP}" -q
 PKR_KEY_B64=\$(base64 < "\${PKR_SSH_KEY_DIR}/packer_id_rsa" | tr -d '\n')
 rm -rf "\${PKR_SSH_KEY_DIR}"
-# Re-encode HCL with the new image name substituted in and upload to COS
-PKR_HCL_B64=\$(printf '%s' '${PKR_HCL_B64}' | base64 -d \
-  | sed "s|${PKR_IMAGE_NAME}|\${PKR_IMAGE_NAME}|g" \
-  | base64 | tr -d '\n')
+
 IAM_TOKEN=\$(ibmcloud iam oauth-tokens --output json | jq -r '.iam_token')
-PKR_HCL_COS_URL="${COS_API_ENDPOINT}/${PKR_PLUGIN_COS_BUCKET}/pipeline-runs/\${PKR_IMAGE_NAME}/ibmcloud.pkr.hcl.b64"
-_TMP_HCL=\$(mktemp); printf '%s' "\${PKR_HCL_B64}" > "\${_TMP_HCL}"
-curl -sS -o /dev/null -X PUT "\${PKR_HCL_COS_URL}" \\
-  -H "Authorization: \${IAM_TOKEN}" \\
-  -H "ibm-service-instance-id: $(echo "${COS_INSTANCE_CRN}" | awk -F: '{print $8}')" \\
-  -H "Content-Type: text/plain" \\
+
+# Re-encode HCL with the new image name and upload to COS
+PKR_HCL_B64=\$(printf '%s' "\${HCL_B64_ORIG}" | base64 -d \
+  | sed "s|\${ORIG_IMAGE_NAME}|\${PKR_IMAGE_NAME}|g" \
+  | base64 | tr -d '\n')
+PKR_HCL_COS_URL="\${COS_API_ENDPOINT}/\${COS_PLUGIN_BUCKET}/pipeline-runs/\${PKR_IMAGE_NAME}/ibmcloud.pkr.hcl.b64"
+_TMP_HCL=\$(mktemp)
+printf '%s' "\${PKR_HCL_B64}" > "\${_TMP_HCL}"
+curl -sS -o /dev/null -X PUT "\${PKR_HCL_COS_URL}" \
+  -H "Authorization: \${IAM_TOKEN}" \
+  -H "ibm-service-instance-id: \${COS_INSTANCE_ID}" \
+  -H "Content-Type: text/plain" \
   --data-binary "@\${_TMP_HCL}"
 rm -f "\${_TMP_HCL}"
-_TMP_KEY=\$(mktemp); printf '%s' "\${PKR_KEY_B64}" > "\${_TMP_KEY}"
-_TMP_BODY=\$(mktemp)
-jq -n \\
-  --arg image_name            "\${PKR_IMAGE_NAME}" \\
-  --arg cos_bucket            "\${PKR_IMAGE_NAME}" \\
-  --arg cos_region            "${COS_REGION}" \\
-  --arg cos_instance_crn      "${COS_INSTANCE_CRN}" \\
-  --arg ibmcloud_api_endpoint "${IBMCLOUD_API_ENDPOINT}" \\
-  --arg cos_api_endpoint      "${COS_API_ENDPOINT}" \\
-  --arg packer_plugin_cos_url "${PKR_PLUGIN_COS_URL}" \\
-  --arg packer_hcl_cos_url    "\${PKR_HCL_COS_URL}" \\
-  --rawfile key               "\${_TMP_KEY}" \\
-  '{"trigger_name":"manual-trigger","pipeline_run_properties":[
-    {"name":"image-name",            "value":$image_name,            "type":"text"},
-    {"name":"cos-bucket",            "value":$cos_bucket,            "type":"text"},
-    {"name":"cos-region",            "value":$cos_region,            "type":"text"},
-    {"name":"cos-instance-crn",      "value":$cos_instance_crn,      "type":"text"},
-    {"name":"ibmcloud-api-endpoint", "value":$ibmcloud_api_endpoint, "type":"text"},
-    {"name":"cos-api-endpoint",      "value":$cos_api_endpoint,      "type":"text"},
-    {"name":"packer-plugin-cos-url", "value":$packer_plugin_cos_url, "type":"text"},
-    {"name":"packer-hcl-cos-url",    "value":$packer_hcl_cos_url,    "type":"text"},
-    {"name":"packer-key-b64",        "value":$key,                   "type":"text"}
-  ]}' > "\${_TMP_BODY}"
-rm -f "\${_TMP_KEY}"
-curl -sS -X POST "${PIPELINE_API}/tekton_pipelines/${PIPELINE_ID}/pipeline_runs" \\
-  -H "Authorization: \${IAM_TOKEN}" \\
-  -H "Content-Type: application/json" \\
-  -H "Accept: application/json" \\
-  --data-binary "@\${_TMP_BODY}" | jq '{id,status,html_url}'
-rm -f "\${_TMP_BODY}"
+
+# Set trigger properties then fire
+_set_prop() {
+  local name="\$1" value="\$2"
+  local enc=\$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "\${name}")
+  local url="\${PIPELINE_API}/tekton_pipelines/\${PIPELINE_ID}/triggers/\${TRIGGER_ID}/properties/\${enc}"
+  local body=\$(jq -n --arg n "\${name}" --arg v "\${value}" '{"name":\$n,"value":\$v,"type":"text"}')
+  local st=\$(curl -sS -o /dev/null -w "%{http_code}" -X PUT "\${url}" \
+    -H "Authorization: \${IAM_TOKEN}" -H "Content-Type: application/json" -d "\${body}")
+  if [[ "\${st}" == "404" || "\${st}" == "400" ]]; then
+    curl -sS -o /dev/null -X POST "\${PIPELINE_API}/tekton_pipelines/\${PIPELINE_ID}/triggers/\${TRIGGER_ID}/properties" \
+      -H "Authorization: \${IAM_TOKEN}" -H "Content-Type: application/json" -d "\${body}"
+  fi
+}
+
+_set_prop "image-name"            "\${PKR_IMAGE_NAME}"
+_set_prop "cos-bucket"            "\${PKR_IMAGE_NAME}"
+_set_prop "cos-region"            "${COS_REGION}"
+_set_prop "cos-instance-crn"      "${COS_INSTANCE_CRN}"
+_set_prop "ibmcloud-api-endpoint" "${IBMCLOUD_API_ENDPOINT}"
+_set_prop "cos-api-endpoint"      "${COS_API_ENDPOINT}"
+_set_prop "packer-plugin-cos-url" "${PKR_PLUGIN_COS_URL}"
+_set_prop "packer-hcl-cos-url"    "\${PKR_HCL_COS_URL}"
+_set_prop "packer-key-b64"        "\${PKR_KEY_B64}"
+
+curl -sS -X POST "\${PIPELINE_API}/tekton_pipelines/\${PIPELINE_ID}/pipeline_runs" \
+  -H "Authorization: \${IAM_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json" \
+  -d '{"trigger_name":"manual-trigger"}' | jq '{id,status,html_url}'
 RETRIGGER
 chmod +x "${RETRIGGER_SCRIPT}"
 echo ""
