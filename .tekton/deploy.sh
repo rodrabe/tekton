@@ -697,11 +697,7 @@ _set_prop "packer-plugin-cos-url" "${PKR_PLUGIN_COS_URL}"
 _set_prop "packer-hcl-cos-url"    "\${PKR_HCL_COS_URL}"
 _set_prop "packer-key-b64"        "\${PKR_KEY_B64}"
 
-RUN=$(curl -sS -X POST "\${PIPELINE_API}/tekton_pipelines/\${PIPELINE_ID}/pipeline_runs" \
-  -H "Authorization: \${IAM_TOKEN}" \
-  -H "Content-Type: application/json" \
-  -H "Accept: application/json" \
-  -d '{"trigger_name":"manual-trigger"}')
+RUN=$(curl -sS -X POST "\${PIPELINE_API}/tekton_pipelines/\${PIPELINE_ID}/pipeline_runs" -H "Authorization: \${IAM_TOKEN}" -H "Content-Type: application/json" -H "Accept: application/json" -d '{"trigger_name":"manual-trigger"}')
 RUN_ID=\$(echo "\${RUN}" | jq -r '.id // empty')
 echo "\${RUN}" | jq '{id, status}'
 [[ -n "\${RUN_ID}" ]] && echo "Logs: https://dev.console.test.cloud.ibm.com/devops/pipelines/tekton/\${PIPELINE_ID}/runs/\${RUN_ID}?env_id=ibm:ys1:us-south"
