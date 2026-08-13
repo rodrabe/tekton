@@ -553,7 +553,8 @@ if [[ "${HCL_UPLOAD_STATUS}" != "200" ]]; then
 fi
 echo "    HCL uploaded: ${PKR_HCL_COS_URL}"
 
-# Build trigger_properties — pass all params directly; key and COS URLs are small enough
+# Build the pipeline run payload using pipeline_run_properties (run-level overrides).
+# trigger_properties are only for properties pre-defined on the trigger itself.
 _TMP_KEY=$(mktemp); printf '%s' "${PKR_KEY_B64}" > "${_TMP_KEY}"
 _TMP_BODY=$(mktemp)
 jq -n \
@@ -568,7 +569,7 @@ jq -n \
   --rawfile key               "${_TMP_KEY}" \
   '{
     "trigger_name": "manual-trigger",
-    "trigger_properties": [
+    "pipeline_run_properties": [
       {"name": "image-name",            "value": $image_name,            "type": "text"},
       {"name": "cos-bucket",            "value": $cos_bucket,            "type": "text"},
       {"name": "cos-region",            "value": $cos_region,            "type": "text"},
@@ -656,7 +657,7 @@ jq -n \\
   --arg packer_plugin_cos_url "${PKR_PLUGIN_COS_URL}" \\
   --arg packer_hcl_cos_url    "\${PKR_HCL_COS_URL}" \\
   --rawfile key               "\${_TMP_KEY}" \\
-  '{"trigger_name":"manual-trigger","trigger_properties":[
+  '{"trigger_name":"manual-trigger","pipeline_run_properties":[
     {"name":"image-name",            "value":$image_name,            "type":"text"},
     {"name":"cos-bucket",            "value":$cos_bucket,            "type":"text"},
     {"name":"cos-region",            "value":$cos_region,            "type":"text"},
