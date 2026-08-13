@@ -557,7 +557,6 @@ echo "    HCL uploaded: ${PKR_HCL_COS_URL}"
 _TMP_KEY=$(mktemp); printf '%s' "${PKR_KEY_B64}" > "${_TMP_KEY}"
 _TMP_BODY=$(mktemp)
 jq -n \
-  --arg trigger_id            "${TRIGGER_ID}" \
   --arg image_name            "${PKR_IMAGE_NAME}" \
   --arg cos_bucket            "${COS_BUCKET}" \
   --arg cos_region            "${COS_REGION}" \
@@ -568,7 +567,7 @@ jq -n \
   --arg packer_hcl_cos_url    "${PKR_HCL_COS_URL}" \
   --rawfile key               "${_TMP_KEY}" \
   '{
-    "trigger": {"id": $trigger_id},
+    "trigger": {"name": "manual-trigger"},
     "trigger_properties": [
       {"name": "image-name",            "value": $image_name,            "type": "text"},
       {"name": "cos-bucket",            "value": $cos_bucket,            "type": "text"},
@@ -648,7 +647,6 @@ rm -f "\${_TMP_HCL}"
 _TMP_KEY=\$(mktemp); printf '%s' "\${PKR_KEY_B64}" > "\${_TMP_KEY}"
 _TMP_BODY=\$(mktemp)
 jq -n \\
-  --arg trigger_id            "${TRIGGER_ID}" \\
   --arg image_name            "\${PKR_IMAGE_NAME}" \\
   --arg cos_bucket            "\${PKR_IMAGE_NAME}" \\
   --arg cos_region            "${COS_REGION}" \\
@@ -658,7 +656,7 @@ jq -n \\
   --arg packer_plugin_cos_url "${PKR_PLUGIN_COS_URL}" \\
   --arg packer_hcl_cos_url    "\${PKR_HCL_COS_URL}" \\
   --rawfile key               "\${_TMP_KEY}" \\
-  '{"trigger":{"id":$trigger_id},"trigger_properties":[
+  '{"trigger":{"name":"manual-trigger"},"trigger_properties":[
     {"name":"image-name",            "value":$image_name,            "type":"text"},
     {"name":"cos-bucket",            "value":$cos_bucket,            "type":"text"},
     {"name":"cos-region",            "value":$cos_region,            "type":"text"},
