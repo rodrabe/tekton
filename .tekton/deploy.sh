@@ -567,7 +567,7 @@ jq -n \
   --arg packer_hcl_cos_url    "${PKR_HCL_COS_URL}" \
   --rawfile key               "${_TMP_KEY}" \
   '{
-    "trigger": {"name": "manual-trigger"},
+    "trigger_name": "manual-trigger",
     "trigger_properties": [
       {"name": "image-name",            "value": $image_name,            "type": "text"},
       {"name": "cos-bucket",            "value": $cos_bucket,            "type": "text"},
@@ -656,7 +656,7 @@ jq -n \\
   --arg packer_plugin_cos_url "${PKR_PLUGIN_COS_URL}" \\
   --arg packer_hcl_cos_url    "\${PKR_HCL_COS_URL}" \\
   --rawfile key               "\${_TMP_KEY}" \\
-  '{"trigger":{"name":"manual-trigger"},"trigger_properties":[
+  '{"trigger_name":"manual-trigger","trigger_properties":[
     {"name":"image-name",            "value":$image_name,            "type":"text"},
     {"name":"cos-bucket",            "value":$cos_bucket,            "type":"text"},
     {"name":"cos-region",            "value":$cos_region,            "type":"text"},
