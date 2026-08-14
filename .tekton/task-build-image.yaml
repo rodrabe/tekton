@@ -100,7 +100,7 @@ spec:
         packer plugins installed
         packer validate "$(workspaces.shared.path)/ibmcloud.pkr.hcl"
 
-        packer build "$(workspaces.shared.path)/ibmcloud.pkr.hcl"
+        packer build -machine-readable "$(workspaces.shared.path)/ibmcloud.pkr.hcl"
 
         echo "==> SBOM (CycloneDX JSON):"
         if [[ -f "$(workspaces.shared.path)/sbom.json" ]]; then
