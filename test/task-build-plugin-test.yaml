@@ -1,0 +1,32 @@
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: build-plugin-test
+spec:
+  workspaces:
+    - name: shared
+      description: "Shared workspace"
+  steps:
+    - name: build-plugin
+      # golang image to compile the plugin from source (go.mod on the branch requires go 1.26.8)
+      image: golang:1.26.8-alpine
+      command:
+        - /bin/sh
+        - -c
+        - |
+          set -e
+          apk add --no-cache git
+
+          # Plugin code from https://github.com/IBM/packer-plugin-ibmcloud/pull/185 (branch x-req-id)
+          PLUGIN_DIR="$(workspaces.shared.path)/packer-plugin-ibmcloud"
+          rm -rf "${PLUGIN_DIR}"
+          git clone --depth 1 --branch x-req-id \
+            https://github.com/IBM/packer-plugin-ibmcloud.git \
+            "${PLUGIN_DIR}"
+
+          cd "${PLUGIN_DIR}"
+          echo "==> Building plugin at $(git rev-parse HEAD)"
+
+          go build -o "$(workspaces.shared.path)/packer-plugin-ibmcloud-bin" .
+          chmod +x "$(workspaces.shared.path)/packer-plugin-ibmcloud-bin"
+          echo "==> Plugin binary built"

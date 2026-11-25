@@ -1,0 +1,207 @@
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: packer-vpc-cleanup-task-test
+spec:
+  params:
+    - name: packer-api-key
+      type: string
+      description: "IBM Cloud API key"
+    - name: REGION
+      type: string
+      default: "us-south"
+      description: "IBM Cloud region (e.g. us-south)"
+    - name: PIPELINE_STATUS
+      type: string
+      description: "Aggregate pipeline status from $(tasks.status) — Succeeded, Failed, or Completed"
+      default: "Failed"
+    - name: DESIRED_IAM_ID
+      type: string
+      default: ""
+      description: "Desired IAM ID / Service CRN for delegation token (iam-authz)"
+    - name: IAM_ENDPOINT
+      type: string
+      default: "https://iam.test.cloud.ibm.com/identity/token"
+      description: "IAM token endpoint"
+    - name: VPC_API_ENDPOINT
+      type: string
+      default: ""
+      description: "VPC API endpoint override (defaults to https://<region>-stage01.iaasdev.cloud.ibm.com)"
+  workspaces:
+    - name: shared
+      description: "Shared workspace — contains packer-resources.json written by the plugin"
+  steps:
+    - name: cleanup-packer-resources
+      image: icr.io/continuous-delivery/pipeline/pipeline-base-ubi:3.46
+      env:
+        - name: IBMCLOUD_API_KEY
+          value: $(params.packer-api-key)
+        - name: DESIRED_IAM_ID
+          value: $(params.DESIRED_IAM_ID)
+        - name: IAM_ENDPOINT
+          value: $(params.IAM_ENDPOINT)
+        - name: VPC_API_ENDPOINT_OVERRIDE
+          value: $(params.VPC_API_ENDPOINT)
+        - name: REGION
+          value: $(params.REGION)
+      command:
+        - /bin/sh
+        - -c
+        - |
+          set -eu
+          echo "==> Current working directory: $(pwd)"
+          echo "==> Contents of current working directory ($(pwd)):"
+          ls -la
+          echo "==> Contents of shared workspace ($(workspaces.shared.path)):"
+          ls -la "$(workspaces.shared.path)"
+
+          RESOURCE_FILE="$(workspaces.shared.path)/packer-resources.json"
+
+          if [ ! -f "${RESOURCE_FILE}" ]; then
+            echo "==> No resource tracker file found — packer did not start or already cleaned up."
+            exit 0
+          fi
+
+          echo "==> Resource tracker contents:"
+          cat "${RESOURCE_FILE}"
+          echo ""
+
+          _json_val() { grep -o "\"$1\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" "${RESOURCE_FILE}" | sed 's/.*"[^"]*"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/'; }
+          INSTANCE_ID=$(_json_val instance_id)
+          FLOATING_IP_ID=$(_json_val floating_ip_id)
+          SG_RULE_ID=$(_json_val security_group_rule_id)
+          SG_ID=$(_json_val security_group_id)
+          SSH_KEY_ID=$(_json_val vpc_ssh_key_id)
+          IMAGE_ID=$(_json_val image_id)
+
+          echo "==> Resources to clean up:"
+          echo "    instance_id:          ${INSTANCE_ID:-<none>}"
+          echo "    floating_ip_id:       ${FLOATING_IP_ID:-<none>}"
+          echo "    security_group_rule:  ${SG_RULE_ID:-<none>}"
+          echo "    security_group_id:    ${SG_ID:-<none>}"
+          echo "    vpc_ssh_key_id:       ${SSH_KEY_ID:-<none>}"
+          echo "    image_id:             ${IMAGE_ID:-<none>}"
+
+          if [ -z "${INSTANCE_ID}${FLOATING_IP_ID}${SG_RULE_ID}${SG_ID}${SSH_KEY_ID}" ]; then
+            echo "==> No resources tracked — nothing to clean up."
+            exit 0
+          fi
+
+          IAM_ENDPOINT="${IAM_ENDPOINT:-https://iam.test.cloud.ibm.com/identity/token}"
+          case "${IAM_ENDPOINT}" in
+            */identity/token) IAM_TOKEN_URL="${IAM_ENDPOINT}" ;;
+            *)                IAM_TOKEN_URL="${IAM_ENDPOINT%/}/identity/token" ;;
+          esac
+
+          # 1. Obtain initial IAM access token from API key
+          echo "==> Step 1: Obtaining initial IAM access token from ${IAM_TOKEN_URL}..."
+          STEP1_RESP=$(mktemp)
+          curl -sS -o "${STEP1_RESP}" -X POST \
+            "${IAM_TOKEN_URL}" \
+            -H "Content-Type: application/x-www-form-urlencoded" \
+            -H "Accept: application/json" \
+            -d "grant_type=urn:ibm:params:oauth:grant-type:apikey&apikey=${IBMCLOUD_API_KEY}"
+
+          AUTH_TOKEN=$(grep -o '"access_token":"[^"]*"' "${STEP1_RESP}" | cut -d'"' -f4)
+          rm -f "${STEP1_RESP}"
+
+          if [ -z "${AUTH_TOKEN}" ]; then
+            echo "ERROR: Failed to obtain initial IAM token."
+            exit 1
+          fi
+
+          # 2. Exchange for delegation token if DESIRED_IAM_ID is provided (iam-authz)
+          IAM_TOKEN="${AUTH_TOKEN}"
+          if [ -n "${DESIRED_IAM_ID}" ]; then
+            echo "==> Step 2: Requesting delegation token for Service CRN (iam-authz)..."
+            echo "    Desired IAM ID: ${DESIRED_IAM_ID}"
+            STEP2_RESP=$(mktemp)
+            curl -sS -o "${STEP2_RESP}" -X POST \
+              "${IAM_TOKEN_URL}" \
+              -H "Content-Type: application/x-www-form-urlencoded" \
+              -H "Accept: application/json" \
+              -d "grant_type=urn:ibm:params:oauth:grant-type:iam-authz&access_token=${AUTH_TOKEN}&desired_iam_id=${DESIRED_IAM_ID}"
+
+            DELEG_TOKEN=$(grep -o '"access_token":"[^"]*"' "${STEP2_RESP}" | cut -d'"' -f4)
+            rm -f "${STEP2_RESP}"
+            if [ -n "${DELEG_TOKEN}" ]; then
+              IAM_TOKEN="${DELEG_TOKEN}"
+              echo "    Delegated token obtained successfully."
+            else
+              echo "    Warning: Delegation token exchange returned no token, falling back to initial token."
+            fi
+          fi
+
+          VPC_API_BASE="${VPC_API_ENDPOINT_OVERRIDE:-https://${REGION}-stage01.iaasdev.cloud.ibm.com}"
+          if [ -z "${VPC_API_BASE}" ]; then
+            VPC_API_BASE="https://${REGION}-stage01.iaasdev.cloud.ibm.com"
+          fi
+          VPC_API_BASE="${VPC_API_BASE%/}"
+          VPC_API_BASE="${VPC_API_BASE%/v1}"
+          echo "==> VPC API Endpoint: ${VPC_API_BASE}"
+
+          VPC_API_VERSION="2024-05-01"
+          GENERATION="2"
+          QS="version=${VPC_API_VERSION}&generation=${GENERATION}"
+
+          _delete() {
+            local label="$1" url="$2"
+            echo "==> Deleting ${label} (${url})..."
+            local st
+            st=$(curl -sS -o /dev/null -w "%{http_code}" -X DELETE \
+              "${url}" \
+              -H "Authorization: Bearer ${IAM_TOKEN}")
+            if [ "${st}" = "204" ] || [ "${st}" = "200" ] || [ "${st}" = "202" ]; then
+              echo "    ${label}: deleted (HTTP ${st})"
+            else
+              echo "    ${label}: delete returned HTTP ${st} (may already be gone)"
+            fi
+          }
+
+          if [ -n "${FLOATING_IP_ID}" ]; then
+            _delete "Floating IP ${FLOATING_IP_ID}" \
+              "${VPC_API_BASE}/v1/floating_ips/${FLOATING_IP_ID}?${QS}"
+          fi
+
+          if [ -n "${INSTANCE_ID}" ]; then
+            _delete "Instance ${INSTANCE_ID}" \
+              "${VPC_API_BASE}/v1/instances/${INSTANCE_ID}?${QS}"
+            echo "==> Waiting for instance deletion..."
+            WAIT=0
+            while [ $WAIT -lt 120 ]; do
+              ST=$(curl -sS -o /dev/null -w "%{http_code}" -X GET \
+                "${VPC_API_BASE}/v1/instances/${INSTANCE_ID}?${QS}" \
+                -H "Authorization: Bearer ${IAM_TOKEN}" -H "Accept: application/json")
+              if [ "${ST}" = "404" ]; then
+                echo "    Instance deleted."
+                break
+              fi
+              echo "    Waiting for instance to be deleted (HTTP ${ST})..."; sleep 10; WAIT=$((WAIT + 10))
+            done
+            [ $WAIT -ge 120 ] && echo "==> Timed out waiting for instance deletion."
+          fi
+
+          if [ -n "${SG_RULE_ID}" ] && [ -n "${SG_ID}" ]; then
+            _delete "Security group rule ${SG_RULE_ID}" \
+              "${VPC_API_BASE}/v1/security_groups/${SG_ID}/rules/${SG_RULE_ID}?${QS}"
+          fi
+
+          if [ -n "${SG_ID}" ]; then
+            _delete "Security group ${SG_ID}" \
+              "${VPC_API_BASE}/v1/security_groups/${SG_ID}?${QS}"
+          fi
+
+          if [ -n "${SSH_KEY_ID}" ]; then
+            _delete "SSH key ${SSH_KEY_ID}" \
+              "${VPC_API_BASE}/v1/keys/${SSH_KEY_ID}?${QS}"
+          fi
+
+          if [ -n "${IMAGE_ID}" ] && [ "$(params.PIPELINE_STATUS)" != "Succeeded" ]; then
+            echo "==> Pipeline status is '$(params.PIPELINE_STATUS)' — deleting image ${IMAGE_ID}..."
+            _delete "Image ${IMAGE_ID}" \
+              "${VPC_API_BASE}/v1/images/${IMAGE_ID}?${QS}"
+          elif [ -n "${IMAGE_ID}" ]; then
+            echo "==> Pipeline succeeded — keeping image ${IMAGE_ID}."
+          fi
+
+          echo "==> Cleanup complete."

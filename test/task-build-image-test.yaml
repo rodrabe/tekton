@@ -1,0 +1,92 @@
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: build-image-test
+spec:
+  workspaces:
+    - name: shared
+  params:
+    - name: image-name
+      type: string
+      default: ""
+    - name: packer-hcl-b64
+      type: string
+      default: ""
+    - name: packer-api-key
+      type: string
+      default: ""
+    - name: packer-iam-url
+      type: string
+      default: ""
+  results:
+    - name: image-name
+  steps:
+    - name: build
+      image: hashicorp/packer:1.16.1
+      env:
+        - name: PKR_VAR_ibmcloud_api_key
+          value: $(params.packer-api-key)
+        - name: STEP_PKR_HCL_B64
+          value: $(params.packer-hcl-b64)
+        - name: STEP_IMAGE_NAME
+          value: $(params.image-name)
+      script: |
+        #!/usr/bin/env sh
+        set -eux
+        WORKSPACE="$(workspaces.shared.path)"
+        cd "${WORKSPACE}"
+        export PACKER_LOG=1
+        export PACKER_LOG_PATH=/dev/stdout
+        export PACKER_PLUGIN_PATH="${WORKSPACE}/packer-plugins"
+        export PACKER_RESOURCE_TRACKING=1
+        export PKR_VAR_ibmcloud_api_key
+
+        # Install packer plugin: use custom-built binary if present, otherwise download from GitHub releases
+        PLUGIN_DIR="${PACKER_PLUGIN_PATH}/github.com/IBM/ibmcloud"
+        mkdir -p "${PLUGIN_DIR}"
+        if [ -f "${WORKSPACE}/packer-plugin-ibmcloud-bin" ]; then
+          echo "==> Using custom-built packer plugin from ${WORKSPACE}/packer-plugin-ibmcloud-bin..."
+          chmod +x "${WORKSPACE}/packer-plugin-ibmcloud-bin"
+          PLUGIN_VERSION=$("${WORKSPACE}/packer-plugin-ibmcloud-bin" 2>&1 | grep -o 'Version [^ ]*' | cut -d' ' -f2 || echo "3.8.1-dev")
+          PLUGIN_VERSION="${PLUGIN_VERSION#v}"
+          BINARY="packer-plugin-ibmcloud_v${PLUGIN_VERSION}_x5.0_linux_amd64"
+          cp "${WORKSPACE}/packer-plugin-ibmcloud-bin" "${PLUGIN_DIR}/${BINARY}"
+        else
+          PLUGIN_VERSION="3.9.0"
+          BINARY="packer-plugin-ibmcloud_v${PLUGIN_VERSION}_x5.0_linux_amd64"
+          echo "==> Downloading packer plugin v${PLUGIN_VERSION} from GitHub..."
+          TMP_ZIP=$(mktemp)
+          wget -qO "${TMP_ZIP}" "https://github.com/IBM/packer-plugin-ibmcloud/releases/download/v${PLUGIN_VERSION}/${BINARY}.zip"
+          unzip -p "${TMP_ZIP}" "${BINARY}" > "${PLUGIN_DIR}/${BINARY}"
+          rm -f "${TMP_ZIP}"
+        fi
+        chmod +x "${PLUGIN_DIR}/${BINARY}"
+        sha256sum "${PLUGIN_DIR}/${BINARY}" | awk '{print $1}' > "${PLUGIN_DIR}/${BINARY}_SHA256SUM"
+
+        # Decode and decompress HCL from the trigger property, then inject
+        # resource_track_file so the plugin writes the tracker to the shared workspace.
+        echo "==> Decoding ibmcloud.pkr.hcl..."
+        printf '%s' "${STEP_PKR_HCL_B64}" | base64 -d | gunzip \
+          | sed "s|resource_group_id = var.resource_group_id|resource_group_id = var.resource_group_id\n  resource_track_file = \"${WORKSPACE}/packer-resources.json\"|" \
+          > "${WORKSPACE}/ibmcloud.pkr.hcl"
+
+        cat "${WORKSPACE}/ibmcloud.pkr.hcl"
+
+        # Resolve image name: use the parameter if set, otherwise extract the
+        # default value of the image_name variable from the decoded HCL.
+        IMAGE_NAME="${STEP_IMAGE_NAME}"
+        if [ -z "${IMAGE_NAME}" ]; then
+          IMAGE_NAME=$(grep -A2 'variable "image_name"' "${WORKSPACE}/ibmcloud.pkr.hcl" \
+            | grep 'default' \
+            | sed 's/.*default[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/')
+          echo "==> image-name param not set; using HCL default: ${IMAGE_NAME}"
+        fi
+
+        packer version
+        packer validate "${WORKSPACE}/ibmcloud.pkr.hcl"
+        packer build -machine-readable "${WORKSPACE}/ibmcloud.pkr.hcl"
+
+        echo "==> Contents of shared workspace (${WORKSPACE}):"
+        ls -la "${WORKSPACE}"
+
+        printf '%s' "${IMAGE_NAME}" > "$(results.image-name.path)"

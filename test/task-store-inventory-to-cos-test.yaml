@@ -1,0 +1,201 @@
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: store-inventory-to-cos-test
+spec:
+  workspaces:
+    - name: shared
+  params:
+    - name: image-name
+      type: string
+    - name: cos-bucket
+      type: string
+    - name: packer-api-key
+      type: string
+      default: ""
+    - name: cos-instance-id
+      type: string
+      default: ""
+    - name: cos-endpoint
+      type: string
+      default: ""
+    - name: trusted-profile-id
+      type: string
+      default: ""
+    - name: ibmcloud-api-endpoint
+      type: string
+      default: "https://cloud.ibm.com"
+    - name: packer-iam-url
+      type: string
+      default: "https://iam.cloud.ibm.com"
+  steps:
+    - name: upload
+      image: icr.io/continuous-delivery/pipeline/pipeline-base-image:2.12
+      env:
+        - name: STEP_API_KEY
+          value: $(params.packer-api-key)
+        - name: STEP_BUCKET
+          value: $(params.cos-bucket)
+        - name: STEP_API_ENDPOINT
+          value: $(params.ibmcloud-api-endpoint)
+        - name: STEP_COS_INSTANCE_ID
+          value: $(params.cos-instance-id)
+        - name: STEP_COS_ENDPOINT
+          value: $(params.cos-endpoint)
+        - name: STEP_PROFILE_ID
+          value: $(params.trusted-profile-id)
+        - name: STEP_IMAGE_NAME
+          value: $(params.image-name)
+        - name: STEP_IAM_URL
+          value: $(params.packer-iam-url)
+      script: |
+        #!/usr/bin/env bash
+        set -euo pipefail
+
+        # Use packer-api-key for auth.
+        _API_KEY="${STEP_API_KEY}"
+
+        echo "==> COS configuration:"
+        echo "    Bucket:      ${STEP_BUCKET}"
+        echo "    Instance ID: ${STEP_COS_INSTANCE_ID}"
+        echo "    IAM URL:     ${STEP_IAM_URL}"
+        echo "    API key src: packer-api-key"
+        echo "    Profile ID:  ${STEP_PROFILE_ID:-<none — skipping assume>}"
+        echo "    Endpoint:    ${STEP_COS_ENDPOINT:-<resolving from bucket location...>}"
+        echo ""
+
+        SBOM_FILE="$(workspaces.shared.path)/sbom.json"
+        if [[ ! -f "${SBOM_FILE}" ]]; then
+          echo "ERROR: sbom.json not found at ${SBOM_FILE}"
+          exit 1
+        fi
+
+        RESOURCE_FILE="$(workspaces.shared.path)/packer-resources.json"
+        IMAGE_ID=$(grep -o '"image_id"[[:space:]]*:[[:space:]]*"[^"]*"' "${RESOURCE_FILE}" 2>/dev/null \
+          | sed 's/.*"image_id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')
+        if [[ -z "${IMAGE_ID}" ]]; then
+          echo "ERROR: could not extract image_id from ${RESOURCE_FILE}"
+          exit 1
+        fi
+        echo "==> Image ID: ${IMAGE_ID}"
+
+        INVENTORY_FILE="$(workspaces.shared.path)/${IMAGE_ID}.json"
+        jq '[.components[] | {name, version}]' "${SBOM_FILE}" > "${INVENTORY_FILE}"
+
+        # Step 1: Obtain IAM bearer token using the test IAM endpoint.
+        # -k: test IAM endpoint may use a self-signed cert
+        APIKEY_GRANT="urn:ibm:params:oauth:grant-type:apikey" # pragma: allowlist secret
+        TMP_RESP=$(mktemp)
+        HTTP_IAM=$(curl -fsSLk -o "${TMP_RESP}" -w "%{http_code}" -X POST \
+          "${STEP_IAM_URL}/identity/token" \
+          -H "Content-Type: application/x-www-form-urlencoded" \
+          -d "grant_type=${APIKEY_GRANT}&apikey=${_API_KEY}")
+        IAM_TOKEN=$(jq -r '.access_token // empty' "${TMP_RESP}" 2>/dev/null || true)
+        rm -f "${TMP_RESP}"
+        if [[ -z "${IAM_TOKEN}" ]]; then
+          echo "ERROR: Failed to obtain IAM token (HTTP ${HTTP_IAM})."
+          exit 1
+        fi
+        echo "==> IAM token obtained (HTTP ${HTTP_IAM})."
+
+        # Step 1b: Optionally assume a Trusted Profile.
+        if [[ -n "${STEP_PROFILE_ID}" ]]; then
+          echo "==> Assuming Trusted Profile '${STEP_PROFILE_ID}'..."
+          ASSUME_GRANT="urn:ibm:params:oauth:grant-type:assume" # pragma: allowlist secret
+          TMP_RESP=$(mktemp)
+          # Do NOT use -f: we need to capture the response body to diagnose errors.
+          HTTP_ASSUME=$(curl -sSLk -o "${TMP_RESP}" -w "%{http_code}" -X POST \
+            "${STEP_IAM_URL}/identity/token" \
+            -H "Content-Type: application/x-www-form-urlencoded" \
+            -H "Accept: application/json" \
+            --data-urlencode "grant_type=${ASSUME_GRANT}" \
+            --data-urlencode "access_token=${IAM_TOKEN}" \
+            --data-urlencode "profile_id=${STEP_PROFILE_ID}")
+          echo "    Assume token HTTP status: ${HTTP_ASSUME}"
+          PROFILE_TOKEN=$(jq -r '.access_token // empty' "${TMP_RESP}" 2>/dev/null || true)
+          rm -f "${TMP_RESP}"
+          if [[ -n "${PROFILE_TOKEN}" ]]; then
+            IAM_TOKEN="${PROFILE_TOKEN}"
+            echo "    Profile token obtained successfully."
+          else
+            echo "    Warning: Could not obtain profile token (HTTP ${HTTP_ASSUME}) — continuing with original IAM token."
+          fi
+        fi
+
+        # Step 1c: Resolve COS endpoint.
+        # Use the explicitly supplied endpoint when provided (required for test-account
+        # buckets whose tokens cannot reach the prod control API).
+        if [[ -n "${STEP_COS_ENDPOINT}" ]]; then
+          COS_ENDPOINT="${STEP_COS_ENDPOINT}"
+          echo "==> Using supplied COS endpoint: ${COS_ENDPOINT}"
+        else
+          COS_CONTROL="https://control.cloud-object-storage.cloud.ibm.com"
+
+          TMP_ENDPOINTS=$(mktemp)
+          curl -fsSLk -o "${TMP_ENDPOINTS}" -X GET \
+            "${COS_CONTROL}/v2/endpoints" \
+            -H "Authorization: Bearer ${IAM_TOKEN}" \
+            -H "Accept: application/json"
+
+          TMP_META=$(mktemp)
+          HTTP_META=$(curl -sSLk -o "${TMP_META}" -w "%{http_code}" -X GET \
+            "${COS_CONTROL}/v1/b/${STEP_BUCKET}" \
+            -H "Authorization: Bearer ${IAM_TOKEN}" \
+            -H "Accept: application/json")
+
+          echo "==> Bucket metadata (HTTP ${HTTP_META}):"
+          jq . "${TMP_META}" 2>/dev/null || cat "${TMP_META}"
+          echo ""
+
+          BUCKET_LOCATION=$(jq -r '.location_constraint // empty' "${TMP_META}" 2>/dev/null || true)
+          rm -f "${TMP_META}"
+
+          if [[ -n "${BUCKET_LOCATION}" ]]; then
+            BUCKET_REGION=$(echo "${BUCKET_LOCATION}" | sed 's/-[^-]*$//')
+            RESOLVED=$(jq -r \
+              --arg region "${BUCKET_REGION}" \
+              '(.service-endpoints.regional[$region].public // {}) | to_entries[0].value // empty' \
+              "${TMP_ENDPOINTS}" 2>/dev/null || true)
+            if [[ -n "${RESOLVED}" ]]; then
+              COS_ENDPOINT="https://${RESOLVED}"
+            else
+              COS_ENDPOINT="https://s3.${BUCKET_REGION}.cloud-object-storage.appdomain.cloud"
+              echo "    Warning: Region '${BUCKET_REGION}' not in endpoints doc — using constructed endpoint."
+            fi
+          else
+            COS_ENDPOINT="https://s3.us-south.cloud-object-storage.appdomain.cloud"
+            echo "    Warning: Could not resolve bucket location — using fallback endpoint."
+          fi
+          rm -f "${TMP_ENDPOINTS}"
+        fi
+
+        echo "==> Resolved COS endpoint: ${COS_ENDPOINT}"
+        echo "    Bucket URL: ${COS_ENDPOINT}/${STEP_BUCKET}"
+
+        # Create the bucket (idempotent — ignore BucketAlreadyExists)
+        # -k: test COS endpoint uses a self-signed/expired cert
+        curl -sSk -o /dev/null -w "==> Bucket PUT status: %{http_code}\n" -X PUT \
+          "${COS_ENDPOINT}/${STEP_BUCKET}" \
+          -H "Authorization: Bearer ${IAM_TOKEN}" \
+          -H "ibm-service-instance-id: ${STEP_COS_INSTANCE_ID}"
+
+        # Upload the inventory (name+version subset of the SBOM)
+        INVENTORY_KEY="${IMAGE_ID}.json"
+        echo "==> Uploading inventory ($(wc -c < "${INVENTORY_FILE}") bytes) to s3://${STEP_BUCKET}/${INVENTORY_KEY}"
+        TMP_RESP=$(mktemp)
+        HTTP_STATUS=$(curl -sSk -o "${TMP_RESP}" -w "%{http_code}" -X PUT \
+          "${COS_ENDPOINT}/${STEP_BUCKET}/${INVENTORY_KEY}" \
+          -H "Authorization: Bearer ${IAM_TOKEN}" \
+          -H "ibm-service-instance-id: ${STEP_COS_INSTANCE_ID}" \
+          -H "Content-Type: application/json" \
+          --data-binary "@${INVENTORY_FILE}")
+
+        if [[ "${HTTP_STATUS}" != "200" ]]; then
+          echo "ERROR: COS PUT (inventory) returned HTTP ${HTTP_STATUS}"
+          cat "${TMP_RESP}"
+          rm -f "${TMP_RESP}"
+          exit 1
+        fi
+        rm -f "${TMP_RESP}"
+
+        echo "==> Stored: s3://${STEP_BUCKET}/${INVENTORY_KEY}"

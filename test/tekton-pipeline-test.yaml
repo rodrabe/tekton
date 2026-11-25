@@ -1,0 +1,214 @@
+---
+# ============================================================
+# TEST pipeline — uses task names: build-image-test, store-inventory-to-cos-test
+# ============================================================
+apiVersion: tekton.dev/v1beta1
+kind: EventListener
+metadata:
+  name: manual-run-test
+spec:
+  triggers:
+    - name: manual-run-test
+      bindings:
+        - ref: manual-run-binding-test
+      template:
+        ref: manual-run-template-test
+---
+apiVersion: tekton.dev/v1beta1
+kind: TriggerBinding
+metadata:
+  name: manual-run-binding-test
+spec:
+  params:
+    - name: image-name
+      value: $(body.image-name)
+    - name: cos-bucket
+      value: $(body.cos-bucket)
+    - name: cos-instance-id
+      value: $(body.cos-instance-id)
+    - name: packer-cos-endpoint
+      value: $(body.packer-cos-endpoint)
+    - name: packer-trusted-profile-id
+      value: $(body.packer-trusted-profile-id)
+    - name: packer-hcl-b64
+      value: $(body.packer-hcl-b64)
+    - name: packer-iam-url
+      value: $(body.packer-iam-url)
+    - name: desired-iam-id
+      value: $(body.desired-iam-id)
+    - name: packer-vpc-endpoint-url
+      value: $(body.packer-vpc-endpoint-url)
+---
+apiVersion: tekton.dev/v1beta1
+kind: TriggerTemplate
+metadata:
+  name: manual-run-template-test
+spec:
+  params:
+    - name: image-name
+      default: ""
+    - name: cos-bucket
+      default: ""
+    - name: cos-instance-id
+      default: ""
+    - name: packer-cos-endpoint
+      default: ""
+    - name: packer-trusted-profile-id
+      default: ""
+    - name: packer-hcl-b64
+      default: ""
+    - name: packer-iam-url
+      default: ""
+    - name: desired-iam-id
+      default: ""
+    - name: packer-vpc-endpoint-url
+      default: ""
+  resourcetemplates:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
+        name: image-builder-pvc-$(tt.params.image-name)
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests:
+            storage: 500Mi
+    - apiVersion: tekton.dev/v1beta1
+      kind: PipelineRun
+      metadata:
+        generateName: image-builder-run-
+      spec:
+        pipelineRef:
+          name: pipeline-image-builder-test
+        workspaces:
+          - name: shared
+            persistentVolumeClaim:
+              claimName: image-builder-pvc-$(tt.params.image-name)
+        params:
+          - name: image-name
+            value: $(tt.params.image-name)
+          - name: cos-bucket
+            value: $(tt.params.cos-bucket)
+          - name: cos-instance-id
+            value: $(tt.params.cos-instance-id)
+          - name: packer-cos-endpoint
+            value: $(tt.params.packer-cos-endpoint)
+          - name: packer-trusted-profile-id
+            value: $(tt.params.packer-trusted-profile-id)
+          - name: packer-hcl-b64
+            value: $(tt.params.packer-hcl-b64)
+          - name: packer-api-key
+            value: $(params.packer-api-key)
+          - name: packer-iam-url
+            value: $(tt.params.packer-iam-url)
+          - name: desired-iam-id
+            value: $(tt.params.desired-iam-id)
+          - name: packer-vpc-endpoint-url
+            value: $(tt.params.packer-vpc-endpoint-url)
+---
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: pipeline-image-builder-test
+spec:
+  params:
+    - name: image-name
+      type: string
+      default: ""
+    - name: cos-bucket
+      type: string
+      default: ""
+    - name: packer-hcl-b64
+      type: string
+      default: ""
+    - name: packer-api-key
+      type: string
+      default: ""
+    - name: packer-iam-url
+      type: string
+      default: ""
+    - name: cos-instance-id
+      type: string
+      default: ""
+    - name: packer-cos-endpoint
+      type: string
+      default: ""
+    - name: packer-trusted-profile-id
+      type: string
+      default: ""
+    - name: ibmcloud-api-endpoint
+      type: string
+      default: "https://cloud.ibm.com"
+    - name: desired-iam-id
+      type: string
+      default: ""
+    - name: packer-vpc-endpoint-url
+      type: string
+      default: ""
+  workspaces:
+    - name: shared
+  tasks:
+    - name: build-plugin
+      taskRef:
+        name: build-plugin-test
+      workspaces:
+        - name: shared
+          workspace: shared
+    - name: build-image
+      runAfter: [build-plugin]
+      taskRef:
+        name: build-image-test
+      workspaces:
+        - name: shared
+          workspace: shared
+      params:
+        - name: image-name
+          value: $(params.image-name)
+        - name: packer-hcl-b64
+          value: $(params.packer-hcl-b64)
+        - name: packer-api-key
+          value: $(params.packer-api-key)
+        - name: packer-iam-url
+          value: $(params.packer-iam-url)
+    - name: store-inventory-to-cos
+      runAfter: [build-image]
+      taskRef:
+        name: store-inventory-to-cos-test
+      workspaces:
+        - name: shared
+          workspace: shared
+      params:
+        - name: image-name
+          value: $(tasks.build-image.results.image-name)
+        - name: packer-api-key
+          value: $(params.packer-api-key)
+        - name: cos-bucket
+          value: $(params.cos-bucket)
+        - name: cos-instance-id
+          value: $(params.cos-instance-id)
+        - name: cos-endpoint
+          value: $(params.packer-cos-endpoint)
+        - name: trusted-profile-id
+          value: $(params.packer-trusted-profile-id)
+        - name: ibmcloud-api-endpoint
+          value: $(params.ibmcloud-api-endpoint)
+        - name: packer-iam-url
+          value: $(params.packer-iam-url)
+  finally:
+    - name: packer-cleanup
+      taskRef:
+        name: packer-vpc-cleanup-task-test
+      workspaces:
+        - name: shared
+          workspace: shared
+      params:
+        - name: packer-api-key
+          value: $(params.packer-api-key)
+        - name: PIPELINE_STATUS
+          value: $(tasks.status)
+        - name: DESIRED_IAM_ID
+          value: $(params.desired-iam-id)
+        - name: IAM_ENDPOINT
+          value: $(params.packer-iam-url)
+        - name: VPC_API_ENDPOINT
+          value: $(params.packer-vpc-endpoint-url)
